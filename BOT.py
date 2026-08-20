@@ -26,7 +26,7 @@ logging.basicConfig(level=logging.INFO)
 router = Router()
 
 # SQLite bazasi
-db = sqlite3.connect("users.db")
+db = sqlite3.connect("users.db", check_same_thread=False)
 cursor = db.cursor()
 
 # 1. Foydalanuvchilar jadvali (user_id, phone, message_id saqlanadi)
@@ -153,53 +153,22 @@ async def find_message_id_in_channel(phone: str):
   return row[0] if row else None
 
 
-# --- ASOSIY TEKSHIRUV: O'ZIDAN VA KANALDAN TEKSHIRISH ---
+# --- TO'G'RILANGAN TEKSHIRUV ---
 async def check_user_access(user_id: int, bot: Bot) -> bool:
-  # 1. Botning o'z bazasidan qidirish
   cursor.execute(
       "SELECT phone, message_id FROM users WHERE user_id = ?", (user_id,)
   )
   user_row = cursor.fetchone()
-  if not user_row:
-    return False
-
-  phone, message_id = user_row
-
-  # 2. Kanalning o'zidan xabar hali ham o'chmaganligini real vaqtda tekshiramiz
-  try:
-    msg = await bot.get_chat_message(
-        chat_id=CHECK_CHANNEL_ID, message_id=message_id
-    )
-    if not msg.text:
-      return False
-
-    # Xatodagi raqam mos kelishini tekshiramiz
-    digits = re.sub(r"\D", "", msg.text)
-    user_digits = re.sub(r"\D", "", phone)
-    if (
-        len(user_digits) >= 9
-        and len(digits) >= 9
-        and user_digits[-9:] != digits[-9:]
-    ):
-      return False
-  except Exception:
-    # Agar xabar kanaldan o'chirib yuborilgan bo'lsa, get_chat_message xato beradi
-    # Bunday holda bazadan ham tozalab tashlaymiz
-    cursor.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
-    db.commit()
-    return False
-
-  return True
+  return True if user_row else False
 
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext, bot: Bot):
   await state.clear()
 
-  # Agar foydalanuvchi bazada bo'lsa va kanaldagi post hali ham turgan bo'lsa
   if await check_user_access(message.from_user.id, bot):
     await message.answer(
-        "✅ Siz ro'yxatdan o'tgansiz va raqamingiz kanalda mavjud.",
+        "✅ Siz ro'yxatdan o'tgansiz va raqamingiz bazada mavjud.",
         reply_markup=get_main_menu(),
     )
     return
@@ -227,7 +196,6 @@ async def check_contact(message: Message, state: FSMContext, bot: Bot):
       "🔍 Raqamingiz kanaldan va bazadan tekshirilmoqda, iltimos kuting..."
   )
 
-  # Kanaldan message_id ni topamiz
   msg_id = await find_message_id_in_channel(phone)
 
   try:
@@ -238,7 +206,6 @@ async def check_contact(message: Message, state: FSMContext, bot: Bot):
     pass
 
   if msg_id:
-    # Topilsa, users jadvaliga user_id, phone va message_id ni saqlaymiz
     cursor.execute(
         "INSERT OR REPLACE INTO users (user_id, phone, message_id) VALUES (?, ?,"
         " ?)",
@@ -328,8 +295,8 @@ async def start_files_mode(message: Message, state: FSMContext, bot: Bot):
         one_time_keyboard=True,
     )
     await message.answer(
-        "❌ **Diqqat!** Raqamingiz bazadan topilmadi yoki kanaldan o'chirilgan."
-        " Iltimos, raqamingizni qaytadan yuboring:",
+        "❌ **Diqqat!** Raqamingiz bazadan topilmadi. Iltimos, raqamingizni"
+        " qaytadan yuboring:",
         reply_markup=keyboard,
         parse_mode="Markdown",
     )
@@ -412,8 +379,7 @@ async def finish_file_collection(message: Message, state: FSMContext, bot: Bot):
         one_time_keyboard=True,
     )
     await message.answer(
-        "❌ **Xatolik!** Raqamingiz kanaldan o'chirilgan yoki bazada topilmadi."
-        " Qaytadan ro'yxatdan o'ting:",
+        "❌ **Xatolik!** Bazada topilmadi. Qaytadan ro'yxatdan o'ting:",
         reply_markup=keyboard,
         parse_mode="Markdown",
     )
@@ -523,8 +489,7 @@ async def check_user_link(message: Message, state: FSMContext, bot: Bot):
         one_time_keyboard=True,
     )
     await message.answer(
-        "❌ **Xatolik!** Raqamingiz kanaldan o'chirilganligi aniqlandi."
-        " Qaytadan ro'yxatdan o'ting:",
+        "❌ **Xatolik!** Bazada topilmadi. Qaytadan ro'yxatdan o'ting:",
         reply_markup=keyboard,
         parse_mode="Markdown",
     )
