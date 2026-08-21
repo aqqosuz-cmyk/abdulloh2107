@@ -97,32 +97,17 @@ def get_main_menu():
     )
 
 
-# --- KANAL TARIXINI O'QIB BAZAGA YAZISH (AVTOMATIK SKANER) ---
-async def scan_channel_history(bot: Bot):
-    """Bot ishga tushganda kanaldagi eski xabarlarni o'qib bazaga yig'adi"""
-    print("Kanal tarixi skaner qilinmoqda...")
-    try:
-        # Telegram Bot API orqali kanalning oxirgi xabarlarini bevosita olib bo'lmaydi (getHistory faqat UserBotda ishlaydi).
-        # Shuning uchun eng so'nggi xabar ID sini topib, sikl orqali orqaga qarab tekshirib chiqamiz:
-        # Lekin oddiyroq va ishlaydigan usul: Kanalga oxirgi yozilgan xabarlarni tekshirish uchun 
-        # bot o'zi ishga tushgandan keyin kelgan xabarlarni ushlaydi. 
-        # Eski xabarlarni avtomatik tahrirlash uchun esa kanal egasi bir marta postlarni tahrirlashi kerak 
-        # yoki biz oxirgi N ta xabar ID sini manual tekshirib chiqishimiz mumkin.
-        pass
-    except Exception as e:
-        print(f"Skaner qilishda xatolik: {e}")
-
-
 # --- KANALGA POST YOZILGANDA BAZAGA QO'SHISH ---
 @router.channel_post()
 async def channel_post_handler(message: Message):
     if message.chat.id == CHECK_CHANNEL_ID and message.text:
         digits = re.sub(r"\D", "", message.text)
-        if len(digits) >= 9:
-            last_9 = digits[-9:]
+        if len(digits) >= 6:
+            # Oxirgi 8 ta raqamni olib bazaga yozamiz (moslashuvchanlik uchun)
+            last_digits = digits[-8:] if len(digits) >= 8 else digits
             cursor.execute(
                 "INSERT OR REPLACE INTO allowed_posts (message_id, phone_digits) VALUES (?, ?)",
-                (message.message_id, last_9),
+                (message.message_id, last_digits),
             )
             db.commit()
 
@@ -132,11 +117,11 @@ async def edited_channel_post_handler(message: Message):
     if message.chat.id == CHECK_CHANNEL_ID:
         if message.text:
             digits = re.sub(r"\D", "", message.text)
-            if len(digits) >= 9:
-                last_9 = digits[-9:]
+            if len(digits) >= 6:
+                last_digits = digits[-8:] if len(digits) >= 8 else digits
                 cursor.execute(
                     "INSERT OR REPLACE INTO allowed_posts (message_id, phone_digits) VALUES (?, ?)",
-                    (message.message_id, last_9),
+                    (message.message_id, last_digits),
                 )
             else:
                 cursor.execute(
@@ -152,14 +137,14 @@ async def edited_channel_post_handler(message: Message):
 
 async def find_message_id_in_channel(phone: str):
     user_digits = re.sub(r"\D", "", phone)
-    user_last_9 = user_digits[-9:] if len(user_digits) >= 9 else user_digits
+    user_last = user_digits[-8:] if len(user_digits) >= 8 else user_digits
 
-    if not user_last_9 or len(user_last_9) < 9:
+    if not user_last:
         return None
 
     cursor.execute(
         "SELECT message_id FROM allowed_posts WHERE phone_digits = ?",
-        (user_last_9,),
+        (user_last,),
     )
     row = cursor.fetchone()
     return row[0] if row else None
@@ -202,9 +187,9 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot):
         one_time_keyboard=True,
     )
     await message.answer(
-        "🔒 **Xavfsizlik tekshiruvi**\n\nBotdan foydalanish uchun telefon raqamingizni yuboring:",
+        "🔒 <b>Xavfsizlik tekshiruvi</b>\n\nBotdan foydalanish uchun telefon raqamingizni yuboring:",
         reply_markup=keyboard,
-        parse_mode="Markdown",
+        parse_mode="HTML",
     )
     await state.set_state(AlbumState.waiting_for_contact)
 
@@ -233,9 +218,9 @@ async def check_contact(message: Message, state: FSMContext, bot: Bot):
         db.commit()
 
         await message.answer(
-            "✅ **Tabriklaymiz! Raqamingiz tasdiqlandi.**\nEndi botdan to'liq foydalanishingiz mumkin.",
+            "✅ <b>Tabriklaymiz! Raqamingiz tasdiqlandi.</b>\nEndi botdan to'liq foydalanishingiz mumkin.",
             reply_markup=get_main_menu(),
-            parse_mode="Markdown",
+            parse_mode="HTML",
         )
         await state.clear()
     else:
@@ -247,10 +232,10 @@ async def check_contact(message: Message, state: FSMContext, bot: Bot):
             one_time_keyboard=True,
         )
         user_digits = re.sub(r"\D", "", phone)
-        user_last_9 = user_digits[-9:] if len(user_digits) >= 9 else user_digits
+        user_last = user_digits[-8:] if len(user_digits) >= 8 else user_digits
         await message.answer(
-            "❌ **Bu telefon raqam kanal bazasida topilmadi!**\n"
-            f"(Tekshirilgan oxirgi 9 raqam: <code>{user_last_9}</code>)\n\nQaytadan urinib ko'ring:",
+            "❌ <b>Bu telefon raqam kanal bazasida topilmadi!</b>\n"
+            f"(Tekshirilgan raqam qismi: <code>{user_last}</code>)\n\nQaytadan urinib ko'ring:",
             reply_markup=keyboard,
             parse_mode="HTML",
         )
@@ -259,7 +244,7 @@ async def check_contact(message: Message, state: FSMContext, bot: Bot):
 @router.message(F.text == "📖 Botning ishlash tartibi")
 async def help_instruction(message: Message):
     text = (
-        "📋 **VINETKA24 — Botdan Foydalanish Tartibi:**\n\n"
+        "📋 <b>VINETKA24 — Botdan Foydalanish Tartibi:</b>\n\n"
         "1️⃣ <b>'📁 Fayl yuborish'</b> tugmasini bosing.\n"
         "2️⃣ Kerakli fayllarni yuboring va <b>'✅ Fayllarni yuborib bo'ldim (Tugatish)'</b> ni bosing.\n"
         "3️⃣ Bot avtomatik ravishda <b>vinetka24.uz/kod</b> havolasini va <b>QR-kod</b>ni taqdim etadi!"
@@ -269,25 +254,25 @@ async def help_instruction(message: Message):
 
 @router.message(F.text == "📞 Biz bilan aloqa")
 async def contact_us(message: Message):
-    text = "📞 **Aloqa:** <code>972342424</code>\n🌐 **Veb-sayt:** vinetka24.uz"
+    text = "📞 <b>Aloqa:</b> <code>972342424</code>\n🌐 <b>Veb-sayt:</b> vinetka24.uz"
     await message.answer(text, reply_markup=get_main_menu(), parse_mode="HTML")
 
 
 @router.message(F.text == "📸 Instagram (@vinetka24)")
 async def instagram_page(message: Message):
     await message.answer(
-        "📸 **Instagram:** [@vinetka24](https://instagram.com/vinetka24)",
+        "📸 <b>Instagram:</b> <a href='https://instagram.com/vinetka24'>@vinetka24</a>",
         reply_markup=get_main_menu(),
-        parse_mode="Markdown",
+        parse_mode="HTML",
     )
 
 
 @router.message(F.text == "📢 Telegram server (@vinetka24)")
 async def telegram_channel(message: Message):
     await message.answer(
-        "📢 **Telegram Server:** [@vinetka24](https://t.me/vinetka24)",
+        "📢 <b>Telegram Server:</b> <a href='https://t.me/vinetka24'>@vinetka24</a>",
         reply_markup=get_main_menu(),
-        parse_mode="Markdown",
+        parse_mode="HTML",
     )
 
 
@@ -307,9 +292,9 @@ async def start_files_mode(message: Message, state: FSMContext, bot: Bot):
             one_time_keyboard=True,
         )
         await message.answer(
-            "❌ **Diqqat!** Raqamingiz kanal bazasidan topilmadi. Iltimos, raqamingizni qaytadan yuboring:",
+            "❌ <b>Diqqat!</b> Raqamingiz kanal bazasidan topilmadi. Iltimos, raqamingizni yuboring:",
             reply_markup=keyboard,
-            parse_mode="Markdown",
+            parse_mode="HTML",
         )
         await state.set_state(AlbumState.waiting_for_contact)
         return
@@ -326,7 +311,7 @@ async def start_files_mode(message: Message, state: FSMContext, bot: Bot):
         resize_keyboard=True,
     )
     await message.answer(
-        "📤 **Fayl yuborish rejimi faollashdi.**\n\nFayllaringizni yuboring va tugatgach <b>'Tugatish'</b> tugmasini bosing.",
+        "📤 <b>Fayl yuborish rejimi faollashdi.</b>\n\nFayllaringizni yuboring va tugatgach <b>'Tugatish'</b> tugmasini bosing.",
         reply_markup=keyboard,
         parse_mode="HTML",
     )
@@ -388,9 +373,9 @@ async def finish_file_collection(message: Message, state: FSMContext, bot: Bot):
             one_time_keyboard=True,
         )
         await message.answer(
-            "❌ **Xatolik!** Raqamingiz kanal bazasidan topilmadi. Qaytadan ro'yxatdan o'ting:",
+            "❌ <b>Xatolik!</b> Raqamingiz kanal bazasidan topilmadi. Qaytadan ro'yxatdan o'ting:",
             reply_markup=keyboard,
-            parse_mode="Markdown",
+            parse_mode="HTML",
         )
         await state.set_state(AlbumState.waiting_for_contact)
         return
@@ -460,7 +445,7 @@ async def finish_file_collection(message: Message, state: FSMContext, bot: Bot):
         await message.answer_photo(
             photo=qr_photo,
             caption=(
-                "✅ **Fayllar muvaffaqiyatli joylandi!**\n\n"
+                "✅ <b>Fayllar muvaffaqiyatli joylandi!</b>\n\n"
                 f"📊 Jami fayllar: {len(files)} ta\n"
                 f"📦 Hajmi: {formatted_total_size}\n"
                 f"🔑 Sizning kodingiz: <code>{code_str}</code>\n\n"
@@ -490,10 +475,6 @@ async def main():
     dp.include_router(router)
 
     await bot.delete_webhook(drop_pending_updates=True)
-    
-    # Eski postlarni o'qib chiqish uchun yordamchi funksiya chaqiruvi
-    await scan_channel_history(bot)
-    
     print("Bot muvaffaqiyatli ishga tushdi...")
     await dp.start_polling(bot)
 
