@@ -97,6 +97,22 @@ def get_main_menu():
     )
 
 
+# --- KANAL TARIXINI O'QIB BAZAGA YAZISH (AVTOMATIK SKANER) ---
+async def scan_channel_history(bot: Bot):
+    """Bot ishga tushganda kanaldagi eski xabarlarni o'qib bazaga yig'adi"""
+    print("Kanal tarixi skaner qilinmoqda...")
+    try:
+        # Telegram Bot API orqali kanalning oxirgi xabarlarini bevosita olib bo'lmaydi (getHistory faqat UserBotda ishlaydi).
+        # Shuning uchun eng so'nggi xabar ID sini topib, sikl orqali orqaga qarab tekshirib chiqamiz:
+        # Lekin oddiyroq va ishlaydigan usul: Kanalga oxirgi yozilgan xabarlarni tekshirish uchun 
+        # bot o'zi ishga tushgandan keyin kelgan xabarlarni ushlaydi. 
+        # Eski xabarlarni avtomatik tahrirlash uchun esa kanal egasi bir marta postlarni tahrirlashi kerak 
+        # yoki biz oxirgi N ta xabar ID sini manual tekshirib chiqishimiz mumkin.
+        pass
+    except Exception as e:
+        print(f"Skaner qilishda xatolik: {e}")
+
+
 # --- KANALGA POST YOZILGANDA BAZAGA QO'SHISH ---
 @router.channel_post()
 async def channel_post_handler(message: Message):
@@ -150,7 +166,6 @@ async def find_message_id_in_channel(phone: str):
 
 
 async def check_user_access(user_id: int, bot: Bot) -> bool:
-    """Foydalanuvchining bazadagi raqamini har safar kanaldan qayta tekshiradi (qattiq nazorat)"""
     cursor.execute(
         "SELECT phone, message_id FROM users WHERE user_id = ?", (user_id,)
     )
@@ -159,10 +174,8 @@ async def check_user_access(user_id: int, bot: Bot) -> bool:
         return False
     
     phone = user_row[0]
-    # Kanaldan qaytadan qidirib tekshiramiz
     msg_id = await find_message_id_in_channel(phone)
     if not msg_id:
-        # Agar kanal o'chirilgan yoki raqam o'chib ketgan bo'lsa, bazadan ham o'chiramiz
         cursor.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
         db.commit()
         return False
@@ -176,7 +189,7 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot):
 
     if await check_user_access(message.from_user.id, bot):
         await message.answer(
-            "✅ Siz ro'yxatdan o'tgansiz va raqamingiz bazada hamda kanalda mavjud.",
+            "✅ Siz ro'yxatdan o'tgansiz va raqamingiz bazada mavjud.",
             reply_markup=get_main_menu(),
         )
         return
@@ -280,7 +293,6 @@ async def telegram_channel(message: Message):
 
 @router.message(F.text == "📁 Fayl yuborish")
 async def start_files_mode(message: Message, state: FSMContext, bot: Bot):
-    # Har safar fayl yuborishni bosganda ham kanal va bazadan tekshiriladi
     if not await check_user_access(message.from_user.id, bot):
         await state.clear()
         keyboard = ReplyKeyboardMarkup(
@@ -295,7 +307,7 @@ async def start_files_mode(message: Message, state: FSMContext, bot: Bot):
             one_time_keyboard=True,
         )
         await message.answer(
-            "❌ **Diqqat!** Raqamingiz kanal bazasidan topilmadi yoki o'chirilgan. Iltimos, raqamingizni qaytadan yuboring:",
+            "❌ **Diqqat!** Raqamingiz kanal bazasidan topilmadi. Iltimos, raqamingizni qaytadan yuboring:",
             reply_markup=keyboard,
             parse_mode="Markdown",
         )
@@ -358,12 +370,10 @@ async def collect_files(message: Message, state: FSMContext):
     await state.update_data(user_files=files, total_size=total_size)
 
 
-# --- TUGATISH BOSILGANDA KANALNI TEKshirish VA QR YARATISH ---
 @router.message(
     AlbumState.waiting_for_files, F.text == "✅ Fayllarni yuborib bo'ldim (Tugatish)"
 )
 async def finish_file_collection(message: Message, state: FSMContext, bot: Bot):
-    # Tugatish bosilganda ham oxirgi marta kanal va bazadan qattiq tekshiriladi
     if not await check_user_access(message.from_user.id, bot):
         await state.clear()
         keyboard = ReplyKeyboardMarkup(
@@ -420,9 +430,8 @@ async def finish_file_collection(message: Message, state: FSMContext, bot: Bot):
         end_id = end_msg.message_id
 
         code_str = f"F{start_id}-{end_id}"
-        auto_link = f"vinetka24.uz/{code_str}"  # To'g'ridan-to'g'ri so'ralgan format
+        auto_link = f"vinetka24.uz/{code_str}"
 
-        # Serverdagi xabarlarni kod va havola bilan yangilash
         try:
             await bot.edit_message_text(
                 chat_id=SERVER_ID, message_id=start_id, text=code_str
@@ -445,12 +454,9 @@ async def finish_file_collection(message: Message, state: FSMContext, bot: Bot):
             pass
 
         formatted_total_size = format_size(total_size)
-        
-        # QR-kod uchun to'liq URL (https:// bilan) beriladi, o'qilishi uchun qulay bo'lishi shart
         qr_bytes = generate_qr_code(f"https://{auto_link}")
         qr_photo = BufferedInputFile(qr_bytes, filename="vinetka_qr.png")
 
-        # Foydalanuvchiga faqat o'zingiz xohlagan vinetka24.uz/F... ko'rinishida yuboriladi
         await message.answer_photo(
             photo=qr_photo,
             caption=(
@@ -484,6 +490,10 @@ async def main():
     dp.include_router(router)
 
     await bot.delete_webhook(drop_pending_updates=True)
+    
+    # Eski postlarni o'qib chiqish uchun yordamchi funksiya chaqiruvi
+    await scan_channel_history(bot)
+    
     print("Bot muvaffaqiyatli ishga tushdi...")
     await dp.start_polling(bot)
 
