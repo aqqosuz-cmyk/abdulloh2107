@@ -97,7 +97,7 @@ def get_main_menu():
     )
 
 
-# --- KANALGA POST YOZILGANDA YOKI TAHRIRLANGANDA BAZAGA SAQLASH ---
+# --- KANALGA POST YOZILganda YOKI TAHRIRLANGANDA BAZAGA SAQLASH ---
 @router.channel_post()
 async def channel_post_handler(message: Message):
     if message.chat.id == CHECK_CHANNEL_ID and message.text:
@@ -105,8 +105,7 @@ async def channel_post_handler(message: Message):
         if len(digits) >= 9:
             last_9 = digits[-9:]
             cursor.execute(
-                "INSERT OR REPLACE INTO allowed_posts (message_id, phone_digits)"
-                " VALUES (?, ?)",
+                "INSERT OR REPLACE INTO allowed_posts (message_id, phone_digits) VALUES (?, ?)",
                 (message.message_id, last_9),
             )
             db.commit()
@@ -120,8 +119,7 @@ async def edited_channel_post_handler(message: Message):
             if len(digits) >= 9:
                 last_9 = digits[-9:]
                 cursor.execute(
-                    "INSERT OR REPLACE INTO allowed_posts (message_id, phone_digits)"
-                    " VALUES (?, ?)",
+                    "INSERT OR REPLACE INTO allowed_posts (message_id, phone_digits) VALUES (?, ?)",
                     (message.message_id, last_9),
                 )
             else:
@@ -131,12 +129,11 @@ async def edited_channel_post_handler(message: Message):
                 )
         else:
             cursor.execute(
-                "DELETE FROM allowed_posts WHERE message_id = ?", (message.message_id,),
+                "DELETE FROM allowed_posts WHERE message_id = ?", (message.message_id,)
             )
         db.commit()
 
 
-# --- KANALDAN RAQAMNI QIDIRIB, UNING MESSAGE_ID SI TOPISH ---
 async def find_message_id_in_channel(phone: str):
     user_digits = re.sub(r"\D", "", phone)
     user_last_9 = user_digits[-9:] if len(user_digits) >= 9 else user_digits
@@ -152,7 +149,6 @@ async def find_message_id_in_channel(phone: str):
     return row[0] if row else None
 
 
-# --- TO'G'RILANGAN TEKSHIRUV ---
 async def check_user_access(user_id: int, bot: Bot) -> bool:
     cursor.execute(
         "SELECT phone, message_id FROM users WHERE user_id = ?", (user_id,)
@@ -180,8 +176,7 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot):
         one_time_keyboard=True,
     )
     await message.answer(
-        "🔒 **Xavfsizlik tekshiruvi**\n\nBotdan foydalanish uchun telefon raqamingizni"
-        " yuboring:",
+        "🔒 **Xavfsizlik tekshiruvi**\n\nBotdan foydalanish uchun telefon raqamingizni yuboring:",
         reply_markup=keyboard,
         parse_mode="Markdown",
     )
@@ -206,15 +201,13 @@ async def check_contact(message: Message, state: FSMContext, bot: Bot):
 
     if msg_id:
         cursor.execute(
-            "INSERT OR REPLACE INTO users (user_id, phone, message_id) VALUES (?, ?,"
-            " ?)",
+            "INSERT OR REPLACE INTO users (user_id, phone, message_id) VALUES (?, ?, ?)",
             (message.from_user.id, phone, msg_id),
         )
         db.commit()
 
         await message.answer(
-            "✅ **Tabriklaymiz! Raqamingiz tasdiqlandi.**\nEndi botdan to'liq"
-            " foydalanishingiz mumkin.",
+            "✅ **Tabriklaymiz! Raqamingiz tasdiqlandi.**\nEndi botdan to'liq foydalanishingiz mumkin.",
             reply_markup=get_main_menu(),
             parse_mode="Markdown",
         )
@@ -231,8 +224,7 @@ async def check_contact(message: Message, state: FSMContext, bot: Bot):
         user_last_9 = user_digits[-9:] if len(user_digits) >= 9 else user_digits
         await message.answer(
             "❌ **Bu telefon raqam kanal bazasida topilmadi!**\n"
-            f"(Tekshirilgan oxirgi 9 raqam: <code>{user_last_9}</code>)\n\nQaytadan"
-            " urinib ko'ring:",
+            f"(Tekshirilgan oxirgi 9 raqam: <code>{user_last_9}</code>)\n\nQaytadan urinib ko'ring:",
             reply_markup=keyboard,
             parse_mode="HTML",
         )
@@ -243,8 +235,7 @@ async def help_instruction(message: Message):
     text = (
         "📋 **VINETKA24 — Botdan Foydalanish Tartibi:**\n\n"
         "1️⃣ <b>'📁 Fayl yuborish'</b> tugmasini bosing.\n"
-        "2️⃣ Kerakli fayllarni yuboring va <b>'✅ Fayllarni yuborib bo'ldim"
-        " (Tugatish)'</b> ni bosing.\n"
+        "2️⃣ Kerakli fayllarni yuboring va <b>'✅ Fayllarni yuborib bo'ldim (Tugatish)'</b> ni bosing.\n"
         "3️⃣ Bot avtomatik ravishda havolani va tayyor <b>QR-kod</b>ni taqdim etadi!"
     )
     await message.answer(text, reply_markup=get_main_menu(), parse_mode="HTML")
@@ -274,7 +265,6 @@ async def telegram_channel(message: Message):
     )
 
 
-# --- FAYL YUBORISH TUGMASI BOSILGANDA ---
 @router.message(F.text == "📁 Fayl yuborish")
 async def start_files_mode(message: Message, state: FSMContext, bot: Bot):
     if not await check_user_access(message.from_user.id, bot):
@@ -291,8 +281,7 @@ async def start_files_mode(message: Message, state: FSMContext, bot: Bot):
             one_time_keyboard=True,
         )
         await message.answer(
-            "❌ **Diqqat!** Raqamingiz bazadan topilmadi. Iltimos, raqamingizni"
-            " qaytadan yuboring:",
+            "❌ **Diqqat!** Raqamingiz bazadan topilmadi. Iltimos, raqamingizni qaytadan yuboring:",
             reply_markup=keyboard,
             parse_mode="Markdown",
         )
@@ -311,8 +300,7 @@ async def start_files_mode(message: Message, state: FSMContext, bot: Bot):
         resize_keyboard=True,
     )
     await message.answer(
-        "📤 **Fayl yuborish rejimi faollashdi.**\n\nFayllaringizni yuboring va"
-        " tugatgach <b>'Tugatish'</b> tugmasini bosing.",
+        "📤 **Fayl yuborish rejimi faollashdi.**\n\nFayllaringizni yuboring va tugatgach <b>'Tugatish'</b> tugmasini bosing.",
         reply_markup=keyboard,
         parse_mode="HTML",
     )
@@ -356,7 +344,7 @@ async def collect_files(message: Message, state: FSMContext):
     await state.update_data(user_files=files, total_size=total_size)
 
 
-# --- TUGATISH TUGMASI BOSILGANDA (AVTOMATIK HAVOLA VA QR-KOD BERISH) ---
+# --- TUGATISH BOSILGANDA AVTOMATIK HAVOLA VA QR YARATISH ---
 @router.message(
     AlbumState.waiting_for_files, F.text == "✅ Fayllarni yuborib bo'ldim (Tugatish)"
 )
@@ -419,7 +407,7 @@ async def finish_file_collection(message: Message, state: FSMContext, bot: Bot):
         code_str = f"F{start_id}-{end_id}"
         auto_link = f"https://vinetka24.uz/{code_str}"
 
-        # Serverdagi xabarlarni kod va havola bilan yangilash
+        # Serverdagi xabarlarni yangilash
         try:
             await bot.edit_message_text(
                 chat_id=SERVER_ID, message_id=start_id, text=code_str
@@ -441,21 +429,20 @@ async def finish_file_collection(message: Message, state: FSMContext, bot: Bot):
         except:
             pass
 
-        # QR kodni generatsiya qilish va yuborish
+        formatted_total_size = format_size(total_size)
         qr_bytes = generate_qr_code(auto_link)
         qr_photo = BufferedInputFile(qr_bytes, filename="vinetka_qr.png")
 
-        formatted_total_size = format_size(total_size)
-
+        # To'g'ridan-to'g'ri QR-kod va havolani yuborish
         await message.answer_photo(
             photo=qr_photo,
             caption=(
                 "🎉 **Tabriklaymiz! Jarayon to'liq yakunlandi.**\n\n"
                 f"📊 Jami fayllar: {len(files)} ta\n"
                 f"📦 Hajmi: {formatted_total_size}\n"
-                f"🔐 **Kod:** <code>{code_str}</code>\n"
-                f"🔗 **Havola:** {auto_link}\n\n"
-                "📱 *Mana sizning tayyor QR-codingiz!* Bot keyingi buyurtmaga tayyor."
+                f"🔗 **Havola:** {auto_link}\n"
+                f"🔐 **Kod:** <code>{code_str}</code>\n\n"
+                "📱 *Mana sizning tayyor QR-codingiz!*"
             ),
             parse_mode="HTML",
             reply_markup=get_main_menu(),
