@@ -101,13 +101,12 @@ def get_main_menu():
 @router.channel_post()
 async def channel_post_handler(message: Message):
     if message.chat.id == CHECK_CHANNEL_ID and message.text:
+        # Barcha raqamlarni to'liq olamiz (masalan: 998972342424)
         digits = re.sub(r"\D", "", message.text)
-        if len(digits) >= 6:
-            # Oxirgi 8 ta raqamni olib bazaga yozamiz (moslashuvchanlik uchun)
-            last_digits = digits[-8:] if len(digits) >= 8 else digits
+        if len(digits) >= 9:
             cursor.execute(
                 "INSERT OR REPLACE INTO allowed_posts (message_id, phone_digits) VALUES (?, ?)",
-                (message.message_id, last_digits),
+                (message.message_id, digits),
             )
             db.commit()
 
@@ -117,11 +116,10 @@ async def edited_channel_post_handler(message: Message):
     if message.chat.id == CHECK_CHANNEL_ID:
         if message.text:
             digits = re.sub(r"\D", "", message.text)
-            if len(digits) >= 6:
-                last_digits = digits[-8:] if len(digits) >= 8 else digits
+            if len(digits) >= 9:
                 cursor.execute(
                     "INSERT OR REPLACE INTO allowed_posts (message_id, phone_digits) VALUES (?, ?)",
-                    (message.message_id, last_digits),
+                    (message.message_id, digits),
                 )
             else:
                 cursor.execute(
@@ -136,15 +134,16 @@ async def edited_channel_post_handler(message: Message):
 
 
 async def find_message_id_in_channel(phone: str):
+    # Foydalanuvchi yuborgan raqamni to'liq raqam shakliga keltiramiz (faqat raqamlar)
     user_digits = re.sub(r"\D", "", phone)
-    user_last = user_digits[-8:] if len(user_digits) >= 8 else user_digits
 
-    if not user_last:
+    if not user_digits:
         return None
 
+    # Bazada to'liq raqamni qidiramiz
     cursor.execute(
-        "SELECT message_id FROM allowed_posts WHERE phone_digits = ?",
-        (user_last,),
+        "SELECT message_id FROM allowed_posts WHERE phone_digits LIKE ?",
+        (f"%{user_digits}%",),
     )
     row = cursor.fetchone()
     return row[0] if row else None
@@ -232,10 +231,9 @@ async def check_contact(message: Message, state: FSMContext, bot: Bot):
             one_time_keyboard=True,
         )
         user_digits = re.sub(r"\D", "", phone)
-        user_last = user_digits[-8:] if len(user_digits) >= 8 else user_digits
         await message.answer(
             "❌ <b>Bu telefon raqam kanal bazasida topilmadi!</b>\n"
-            f"(Tekshirilgan raqam qismi: <code>{user_last}</code>)\n\nQaytadan urinib ko'ring:",
+            f"(Tekshirilgan to'liq raqam: <code>+{user_digits}</code>)\n\nQaytadan urinib ko'ring:",
             reply_markup=keyboard,
             parse_mode="HTML",
         )
