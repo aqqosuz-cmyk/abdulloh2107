@@ -29,7 +29,7 @@ router = Router()
 db = sqlite3.connect("users.db", check_same_thread=False)
 cursor = db.cursor()
 
-# 1. Foydalanuvchilar jadvali (user_id, phone, message_id saqlanadi)
+# 1. Foydalanuvchilar jadvali
 cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY, 
@@ -38,7 +38,7 @@ cursor.execute("""
     )
 """)
 
-# 2. Kanal postlari jadvali (Kanal bazasi - xabar ID si va raqamlar)
+# 2. Kanal postlari jadvali
 cursor.execute("""
     CREATE TABLE IF NOT EXISTS allowed_posts (
         message_id INTEGER PRIMARY KEY,
@@ -97,7 +97,7 @@ def get_main_menu():
     )
 
 
-# --- KANALGA POST YOZILganda YOKI TAHRIRLANGANDA BAZAGA SAQLASH ---
+# --- KANALGA POST YOZILGANDA BAZAGA QO'SHISH ---
 @router.channel_post()
 async def channel_post_handler(message: Message):
     if message.chat.id == CHECK_CHANNEL_ID and message.text:
@@ -109,6 +109,7 @@ async def channel_post_handler(message: Message):
                 (message.message_id, last_9),
             )
             db.commit()
+            print(f"Kanalga post yozildi va bazaga qo'shildi: {last_9}")
 
 
 @router.edited_channel_post()
@@ -141,6 +142,7 @@ async def find_message_id_in_channel(phone: str):
     if not user_last_9 or len(user_last_9) < 9:
         return None
 
+    # Bazada qanday raqamlar borligini ko'rish uchun logga chiqaramiz
     cursor.execute(
         "SELECT message_id FROM allowed_posts WHERE phone_digits = ?",
         (user_last_9,),
@@ -224,7 +226,8 @@ async def check_contact(message: Message, state: FSMContext, bot: Bot):
         user_last_9 = user_digits[-9:] if len(user_digits) >= 9 else user_digits
         await message.answer(
             "❌ **Bu telefon raqam kanal bazasida topilmadi!**\n"
-            f"(Tekshirilgan oxirgi 9 raqam: <code>{user_last_9}</code>)\n\nQaytadan urinib ko'ring:",
+            f"(Tekshirilgan oxirgi 9 raqam: <code>{user_last_9}</code>)\n\n"
+            "⚠️ *Eslatma: Kanalda bu raqam yozilgan post mavjudligiga va bot u yerda admin ekanligiga ishonch hosil qiling.*",
             reply_markup=keyboard,
             parse_mode="HTML",
         )
@@ -344,7 +347,6 @@ async def collect_files(message: Message, state: FSMContext):
     await state.update_data(user_files=files, total_size=total_size)
 
 
-# --- TUGATISH BOSILGANDA AVTOMATIK HAVOLA VA QR YARATISH ---
 @router.message(
     AlbumState.waiting_for_files, F.text == "✅ Fayllarni yuborib bo'ldim (Tugatish)"
 )
@@ -388,7 +390,7 @@ async def finish_file_collection(message: Message, state: FSMContext, bot: Bot):
     try:
         start_msg = await bot.send_message(
             chat_id=SERVER_ID,
-            text="📥 [CORPORATE_START_MARKER] Server fayllarni qabul qilishga tayyor.",
+            text="📥 [CORPORATE_FOUNDER] Server tayyorlanmoqda...",
         )
         start_id = start_msg.message_id
 
@@ -400,14 +402,13 @@ async def finish_file_collection(message: Message, state: FSMContext, bot: Bot):
             )
 
         end_msg = await bot.send_message(
-            chat_id=SERVER_ID, text="🏁 [CORPORATE_END_MARKER] Fayllar tugadi."
+            chat_id=SERVER_ID, text="🏁 [CORPORATE_END] Tugadi."
         )
         end_id = end_msg.message_id
 
         code_str = f"F{start_id}-{end_id}"
         auto_link = f"https://vinetka24.uz/{code_str}"
 
-        # Serverdagi xabarlarni yangilash
         try:
             await bot.edit_message_text(
                 chat_id=SERVER_ID, message_id=start_id, text=code_str
@@ -433,7 +434,6 @@ async def finish_file_collection(message: Message, state: FSMContext, bot: Bot):
         qr_bytes = generate_qr_code(auto_link)
         qr_photo = BufferedInputFile(qr_bytes, filename="vinetka_qr.png")
 
-        # To'g'ridan-to'g'ri QR-kod va havolani yuborish
         await message.answer_photo(
             photo=qr_photo,
             caption=(
