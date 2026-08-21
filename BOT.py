@@ -97,12 +97,32 @@ def get_main_menu():
     )
 
 
+def extract_phone_digits(text: str) -> str:
+    """
+    Kanal matnidan faqat haqiqiy telefon raqamini (masalan, 998901234567 yoki 9-12 xonali raqamni)
+    aniq ajratib olish uchun funksiya.
+    """
+    if not text:
+        return ""
+    
+    # 998 bilan boshlanuvchi yoki oddiy 9 xonali raqamlarni qidirish uchun pattern
+    # Masalan: +998 (90) 123-45-67 yoki 998901234567
+    cleaned = re.sub(r"\D", "", text)
+    
+    # Agar 12 xonali bo'lsa va 998 bilan boshlansa (O'zbekiston formati)
+    if len(cleaned) >= 12 and cleaned.startswith("998"):
+        return cleaned[-12:]  # Oxirgi 12 ta raqamni olamiz
+    elif len(cleaned) >= 9:
+        return cleaned[-9:]   # Faqat 9 xonali abonent qismini olamiz
+    
+    return cleaned
+
+
 # --- KANALGA POST YOZILGANDA BAZAGA QO'SHISH ---
 @router.channel_post()
 async def channel_post_handler(message: Message):
     if message.chat.id == CHECK_CHANNEL_ID and message.text:
-        # Barcha raqamlarni to'liq olamiz (masalan: 998972342424)
-        digits = re.sub(r"\D", "", message.text)
+        digits = extract_phone_digits(message.text)
         if len(digits) >= 9:
             cursor.execute(
                 "INSERT OR REPLACE INTO allowed_posts (message_id, phone_digits) VALUES (?, ?)",
@@ -115,7 +135,7 @@ async def channel_post_handler(message: Message):
 async def edited_channel_post_handler(message: Message):
     if message.chat.id == CHECK_CHANNEL_ID:
         if message.text:
-            digits = re.sub(r"\D", "", message.text)
+            digits = extract_phone_digits(message.text)
             if len(digits) >= 9:
                 cursor.execute(
                     "INSERT OR REPLACE INTO allowed_posts (message_id, phone_digits) VALUES (?, ?)",
@@ -134,16 +154,14 @@ async def edited_channel_post_handler(message: Message):
 
 
 async def find_message_id_in_channel(phone: str):
-    # Foydalanuvchi yuborgan raqamni to'liq raqam shakliga keltiramiz (faqat raqamlar)
-    user_digits = re.sub(r"\D", "", phone)
-
+    user_digits = extract_phone_digits(phone)
     if not user_digits:
         return None
 
-    # Bazada to'liq raqamni qidiramiz
+    # Oxirgi raqamlar bo'yicha aniq qidirish (9 yoki 12 xonali oxirgi qismi bilan moslash)
     cursor.execute(
         "SELECT message_id FROM allowed_posts WHERE phone_digits LIKE ?",
-        (f"%{user_digits}%",),
+        (f"%{user_digits[-9:]}%",),
     )
     row = cursor.fetchone()
     return row[0] if row else None
@@ -156,7 +174,7 @@ async def check_user_access(user_id: int, bot: Bot) -> bool:
     user_row = cursor.fetchone()
     if not user_row:
         return False
-    
+     
     phone = user_row[0]
     msg_id = await find_message_id_in_channel(phone)
     if not msg_id:
@@ -230,7 +248,7 @@ async def check_contact(message: Message, state: FSMContext, bot: Bot):
             resize_keyboard=True,
             one_time_keyboard=True,
         )
-        user_digits = re.sub(r"\D", "", phone)
+        user_digits = extract_phone_digits(phone)
         await message.answer(
             "❌ <b>Bu telefon raqam kanal bazasida topilmadi!</b>\n"
             f"(Tekshirilgan to'liq raqam: <code>+{user_digits}</code>)\n\nQaytadan urinib ko'ring:",
