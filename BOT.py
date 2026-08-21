@@ -49,178 +49,129 @@ db.commit()
 
 
 class AlbumState(StatesGroup):
-  waiting_for_files = State()
-  waiting_for_link = State()
-  waiting_for_contact = State()
+    waiting_for_files = State()
+    waiting_for_contact = State()
 
 
 def format_size(size_bytes):
-  if size_bytes < 1024:
-    return f"{size_bytes} B"
-  elif size_bytes < 1024 * 1024:
-    return f"{size_bytes / 1024:.1f} KB"
-  else:
-    return f"{size_bytes / (1024 * 1024):.2f} MB"
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    else:
+        return f"{size_bytes / (1024 * 1024):.2f} MB"
 
 
 def generate_qr_code(link: str) -> bytes:
-  qr = qrcode.QRCode(
-      version=1,
-      error_correction=qrcode.constants.ERROR_CORRECT_M,
-      box_size=10,
-      border=4,
-  )
-  qr.add_data(link)
-  qr.make(fit=True)
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(link)
+    qr.make(fit=True)
 
-  img = qr.make_image(fill_color="black", back_color="white")
-  output = io.BytesIO()
-  img.save(output, format="PNG")
-  output.seek(0)
-  return output.read()
+    img = qr.make_image(fill_color="black", back_color="white")
+    output = io.BytesIO()
+    img.save(output, format="PNG")
+    output.seek(0)
+    return output.read()
 
 
 def get_main_menu():
-  return ReplyKeyboardMarkup(
-      keyboard=[
-          [KeyboardButton(text="📁 Fayl yuborish")],
-          [
-              KeyboardButton(text="📖 Botning ishlash tartibi"),
-              KeyboardButton(text="📞 Biz bilan aloqa"),
-          ],
-          [
-              KeyboardButton(text="📸 Instagram (@vinetka24)"),
-              KeyboardButton(text="📢 Telegram server (@vinetka24)"),
-          ],
-          [KeyboardButton(text="/start")],
-      ],
-      resize_keyboard=True,
-  )
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📁 Fayl yuborish")],
+            [
+                KeyboardButton(text="📖 Botning ishlash tartibi"),
+                KeyboardButton(text="📞 Biz bilan aloqa"),
+            ],
+            [
+                KeyboardButton(text="📸 Instagram (@vinetka24)"),
+                KeyboardButton(text="📢 Telegram server (@vinetka24)"),
+            ],
+            [KeyboardButton(text="/start")],
+        ],
+        resize_keyboard=True,
+    )
 
 
 # --- KANALGA POST YOZILGANDA YOKI TAHRIRLANGANDA BAZAGA SAQLASH ---
 @router.channel_post()
 async def channel_post_handler(message: Message):
-  if message.chat.id == CHECK_CHANNEL_ID and message.text:
-    digits = re.sub(r"\D", "", message.text)
-    if len(digits) >= 9:
-      last_9 = digits[-9:]
-      cursor.execute(
-          "INSERT OR REPLACE INTO allowed_posts (message_id, phone_digits)"
-          " VALUES (?, ?)",
-          (message.message_id, last_9),
-      )
-      db.commit()
+    if message.chat.id == CHECK_CHANNEL_ID and message.text:
+        digits = re.sub(r"\D", "", message.text)
+        if len(digits) >= 9:
+            last_9 = digits[-9:]
+            cursor.execute(
+                "INSERT OR REPLACE INTO allowed_posts (message_id, phone_digits)"
+                " VALUES (?, ?)",
+                (message.message_id, last_9),
+            )
+            db.commit()
 
 
 @router.edited_channel_post()
 async def edited_channel_post_handler(message: Message):
-  if message.chat.id == CHECK_CHANNEL_ID:
-    if message.text:
-      digits = re.sub(r"\D", "", message.text)
-      if len(digits) >= 9:
-        last_9 = digits[-9:]
-        cursor.execute(
-            "INSERT OR REPLACE INTO allowed_posts (message_id, phone_digits)"
-            " VALUES (?, ?)",
-            (message.message_id, last_9),
-        )
-      else:
-        cursor.execute(
-            "DELETE FROM allowed_posts WHERE message_id = ?",
-            (message.message_id,),
-        )
-    else:
-      cursor.execute(
-          "DELETE FROM allowed_posts WHERE message_id = ?", (message.message_id,),
-      )
-    db.commit()
+    if message.chat.id == CHECK_CHANNEL_ID:
+        if message.text:
+            digits = re.sub(r"\D", "", message.text)
+            if len(digits) >= 9:
+                last_9 = digits[-9:]
+                cursor.execute(
+                    "INSERT OR REPLACE INTO allowed_posts (message_id, phone_digits)"
+                    " VALUES (?, ?)",
+                    (message.message_id, last_9),
+                )
+            else:
+                cursor.execute(
+                    "DELETE FROM allowed_posts WHERE message_id = ?",
+                    (message.message_id,),
+                )
+        else:
+            cursor.execute(
+                "DELETE FROM allowed_posts WHERE message_id = ?", (message.message_id,),
+            )
+        db.commit()
 
 
 # --- KANALDAN RAQAMNI QIDIRIB, UNING MESSAGE_ID SI TOPISH ---
 async def find_message_id_in_channel(phone: str):
-  user_digits = re.sub(r"\D", "", phone)
-  user_last_9 = user_digits[-9:] if len(user_digits) >= 9 else user_digits
+    user_digits = re.sub(r"\D", "", phone)
+    user_last_9 = user_digits[-9:] if len(user_digits) >= 9 else user_digits
 
-  if not user_last_9 or len(user_last_9) < 9:
-    return None
+    if not user_last_9 or len(user_last_9) < 9:
+        return None
 
-  cursor.execute(
-      "SELECT message_id FROM allowed_posts WHERE phone_digits = ?",
-      (user_last_9,),
-  )
-  row = cursor.fetchone()
-  return row[0] if row else None
+    cursor.execute(
+        "SELECT message_id FROM allowed_posts WHERE phone_digits = ?",
+        (user_last_9,),
+    )
+    row = cursor.fetchone()
+    return row[0] if row else None
 
 
 # --- TO'G'RILANGAN TEKSHIRUV ---
 async def check_user_access(user_id: int, bot: Bot) -> bool:
-  cursor.execute(
-      "SELECT phone, message_id FROM users WHERE user_id = ?", (user_id,)
-  )
-  user_row = cursor.fetchone()
-  return True if user_row else False
+    cursor.execute(
+        "SELECT phone, message_id FROM users WHERE user_id = ?", (user_id,)
+    )
+    user_row = cursor.fetchone()
+    return True if user_row else False
 
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext, bot: Bot):
-  await state.clear()
-
-  if await check_user_access(message.from_user.id, bot):
-    await message.answer(
-        "✅ Siz ro'yxatdan o'tgansiz va raqamingiz bazada mavjud.",
-        reply_markup=get_main_menu(),
-    )
-    return
-
-  keyboard = ReplyKeyboardMarkup(
-      keyboard=[
-          [KeyboardButton(text="📞 Telefon raqamni yuborish", request_contact=True)]
-      ],
-      resize_keyboard=True,
-      one_time_keyboard=True,
-  )
-  await message.answer(
-      "🔒 **Xavfsizlik tekshiruvi**\n\nBotdan foydalanish uchun telefon raqamingizni"
-      " yuboring:",
-      reply_markup=keyboard,
-      parse_mode="Markdown",
-  )
-  await state.set_state(AlbumState.waiting_for_contact)
-
-
-@router.message(AlbumState.waiting_for_contact, F.contact)
-async def check_contact(message: Message, state: FSMContext, bot: Bot):
-  phone = message.contact.phone_number
-  wait_msg = await message.answer(
-      "🔍 Raqamingiz kanaldan va bazadan tekshirilmoqda, iltimos kuting..."
-  )
-
-  msg_id = await find_message_id_in_channel(phone)
-
-  try:
-    await bot.delete_message(
-        chat_id=message.chat.id, message_id=wait_msg.message_id
-    )
-  except:
-    pass
-
-  if msg_id:
-    cursor.execute(
-        "INSERT OR REPLACE INTO users (user_id, phone, message_id) VALUES (?, ?,"
-        " ?)",
-        (message.from_user.id, phone, msg_id),
-    )
-    db.commit()
-
-    await message.answer(
-        "✅ **Tabriklaymiz! Raqamingiz tasdiqlandi.**\nEndi botdan to'liq"
-        " foydalanishingiz mumkin.",
-        reply_markup=get_main_menu(),
-        parse_mode="Markdown",
-    )
     await state.clear()
-  else:
+
+    if await check_user_access(message.from_user.id, bot):
+        await message.answer(
+            "✅ Siz ro'yxatdan o'tgansiz va raqamingiz bazada mavjud.",
+            reply_markup=get_main_menu(),
+        )
+        return
+
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📞 Telefon raqamni yuborish", request_contact=True)]
@@ -228,104 +179,149 @@ async def check_contact(message: Message, state: FSMContext, bot: Bot):
         resize_keyboard=True,
         one_time_keyboard=True,
     )
-    user_digits = re.sub(r"\D", "", phone)
-    user_last_9 = user_digits[-9:] if len(user_digits) >= 9 else user_digits
     await message.answer(
-        "❌ **Bu telefon raqam kanal bazasida topilmadi!**\n"
-        f"(Tekshirilgan oxirgi 9 raqam: <code>{user_last_9}</code>)\n\nQaytadan"
-        " urinib ko'ring:",
+        "🔒 **Xavfsizlik tekshiruvi**\n\nBotdan foydalanish uchun telefon raqamingizni"
+        " yuboring:",
         reply_markup=keyboard,
-        parse_mode="HTML",
+        parse_mode="Markdown",
     )
+    await state.set_state(AlbumState.waiting_for_contact)
+
+
+@router.message(AlbumState.waiting_for_contact, F.contact)
+async def check_contact(message: Message, state: FSMContext, bot: Bot):
+    phone = message.contact.phone_number
+    wait_msg = await message.answer(
+        "🔍 Raqamingiz kanaldan va bazadan tekshirilmoqda, iltimos kuting..."
+    )
+
+    msg_id = await find_message_id_in_channel(phone)
+
+    try:
+        await bot.delete_message(
+            chat_id=message.chat.id, message_id=wait_msg.message_id
+        )
+    except:
+        pass
+
+    if msg_id:
+        cursor.execute(
+            "INSERT OR REPLACE INTO users (user_id, phone, message_id) VALUES (?, ?,"
+            " ?)",
+            (message.from_user.id, phone, msg_id),
+        )
+        db.commit()
+
+        await message.answer(
+            "✅ **Tabriklaymiz! Raqamingiz tasdiqlandi.**\nEndi botdan to'liq"
+            " foydalanishingiz mumkin.",
+            reply_markup=get_main_menu(),
+            parse_mode="Markdown",
+        )
+        await state.clear()
+    else:
+        keyboard = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="📞 Telefon raqamni yuborish", request_contact=True)]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True,
+        )
+        user_digits = re.sub(r"\D", "", phone)
+        user_last_9 = user_digits[-9:] if len(user_digits) >= 9 else user_digits
+        await message.answer(
+            "❌ **Bu telefon raqam kanal bazasida topilmadi!**\n"
+            f"(Tekshirilgan oxirgi 9 raqam: <code>{user_last_9}</code>)\n\nQaytadan"
+            " urinib ko'ring:",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
 
 
 @router.message(F.text == "📖 Botning ishlash tartibi")
 async def help_instruction(message: Message):
-  text = (
-      "📋 **VINETKA24 — Botdan Foydalanish Tartibi:**\n\n"
-      "1️⃣ <b>'📁 Fayl yuborish'</b> tugmasini bosing.\n"
-      "2️⃣ Kerakli fayllarni yuboring va <b>'✅ Fayllarni yuborib bo'ldim"
-      " (Tugatish)'</b> ni bosing.\n"
-      "3️⃣ Bot sizga fayllar <b>kodini</b> beradi.\n"
-      "4️⃣ So'ngra platformadan olingan havolani (masalan:"
-      " <b>vinetka24.uz/...</b>) yuboring.\n"
-      "5️⃣ Tayyor <b>QR-kod</b>ni oling!"
-  )
-  await message.answer(text, reply_markup=get_main_menu(), parse_mode="HTML")
+    text = (
+        "📋 **VINETKA24 — Botdan Foydalanish Tartibi:**\n\n"
+        "1️⃣ <b>'📁 Fayl yuborish'</b> tugmasini bosing.\n"
+        "2️⃣ Kerakli fayllarni yuboring va <b>'✅ Fayllarni yuborib bo'ldim"
+        " (Tugatish)'</b> ni bosing.\n"
+        "3️⃣ Bot avtomatik ravishda havolani va tayyor <b>QR-kod</b>ni taqdim etadi!"
+    )
+    await message.answer(text, reply_markup=get_main_menu(), parse_mode="HTML")
 
 
 @router.message(F.text == "📞 Biz bilan aloqa")
 async def contact_us(message: Message):
-  text = "📞 **Aloqa:** <code>972342424</code>\n🌐 **Veb-sayt:** vinetka24.uz"
-  await message.answer(text, reply_markup=get_main_menu(), parse_mode="HTML")
+    text = "📞 **Aloqa:** <code>972342424</code>\n🌐 **Veb-sayt:** vinetka24.uz"
+    await message.answer(text, reply_markup=get_main_menu(), parse_mode="HTML")
 
 
 @router.message(F.text == "📸 Instagram (@vinetka24)")
 async def instagram_page(message: Message):
-  await message.answer(
-      "📸 **Instagram:** [@vinetka24](https://instagram.com/vinetka24)",
-      reply_markup=get_main_menu(),
-      parse_mode="Markdown",
-  )
+    await message.answer(
+        "📸 **Instagram:** [@vinetka24](https://instagram.com/vinetka24)",
+        reply_markup=get_main_menu(),
+        parse_mode="Markdown",
+    )
 
 
 @router.message(F.text == "📢 Telegram server (@vinetka24)")
 async def telegram_channel(message: Message):
-  await message.answer(
-      "📢 **Telegram Server:** [@vinetka24](https://t.me/vinetka24)",
-      reply_markup=get_main_menu(),
-      parse_mode="Markdown",
-  )
+    await message.answer(
+        "📢 **Telegram Server:** [@vinetka24](https://t.me/vinetka24)",
+        reply_markup=get_main_menu(),
+        parse_mode="Markdown",
+    )
 
 
 # --- FAYL YUBORISH TUGMASI BOSILGANDA ---
 @router.message(F.text == "📁 Fayl yuborish")
 async def start_files_mode(message: Message, state: FSMContext, bot: Bot):
-  if not await check_user_access(message.from_user.id, bot):
-    await state.clear()
+    if not await check_user_access(message.from_user.id, bot):
+        await state.clear()
+        keyboard = ReplyKeyboardMarkup(
+            keyboard=[
+                [
+                    KeyboardButton(
+                        text="📞 Telefon raqamni yuborish", request_contact=True
+                    )
+                ]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True,
+        )
+        await message.answer(
+            "❌ **Diqqat!** Raqamingiz bazadan topilmadi. Iltimos, raqamingizni"
+            " qaytadan yuboring:",
+            reply_markup=keyboard,
+            parse_mode="Markdown",
+        )
+        await state.set_state(AlbumState.waiting_for_contact)
+        return
+
+    await state.set_state(AlbumState.waiting_for_files)
+    await state.update_data(user_files=[], total_size=0)
+
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
-            [
-                KeyboardButton(
-                    text="📞 Telefon raqamni yuborish", request_contact=True
-                )
-            ]
+            [KeyboardButton(text="✅ Fayllarni yuborib bo'ldim (Tugatish)")],
+            [KeyboardButton(text="❌ Bekor qilish")],
+            [KeyboardButton(text="/start")],
         ],
         resize_keyboard=True,
-        one_time_keyboard=True,
     )
     await message.answer(
-        "❌ **Diqqat!** Raqamingiz bazadan topilmadi. Iltimos, raqamingizni"
-        " qaytadan yuboring:",
+        "📤 **Fayl yuborish rejimi faollashdi.**\n\nFayllaringizni yuboring va"
+        " tugatgach <b>'Tugatish'</b> tugmasini bosing.",
         reply_markup=keyboard,
-        parse_mode="Markdown",
+        parse_mode="HTML",
     )
-    await state.set_state(AlbumState.waiting_for_contact)
-    return
-
-  await state.set_state(AlbumState.waiting_for_files)
-  await state.update_data(user_files=[], total_size=0)
-
-  keyboard = ReplyKeyboardMarkup(
-      keyboard=[
-          [KeyboardButton(text="✅ Fayllarni yuborib bo'ldim (Tugatish)")],
-          [KeyboardButton(text="❌ Bekor qilish")],
-          [KeyboardButton(text="/start")],
-      ],
-      resize_keyboard=True,
-  )
-  await message.answer(
-      "📤 **Fayl yuborish rejimi faollashdi.**\n\nFayllaringizni yuboring va"
-      " tugatgach <b>'Tugatish'</b> tugmasini bosing.",
-      reply_markup=keyboard,
-      parse_mode="HTML",
-  )
 
 
 @router.message(F.text == "❌ Bekor qilish")
 async def cancel_process(message: Message, state: FSMContext):
-  await state.clear()
-  await message.answer("❌ Amal bekor qilindi.", reply_markup=get_main_menu())
+    await state.clear()
+    await message.answer("❌ Amal bekor qilindi.", reply_markup=get_main_menu())
 
 
 @router.message(
@@ -340,230 +336,154 @@ async def cancel_process(message: Message, state: FSMContext):
     ),
 )
 async def collect_files(message: Message, state: FSMContext):
-  data = await state.get_data()
-  files = data.get("user_files", [])
-  total_size = data.get("total_size", 0)
+    data = await state.get_data()
+    files = data.get("user_files", [])
+    total_size = data.get("total_size", 0)
 
-  file_size = 0
-  if message.document:
-    file_size = message.document.file_size or 0
-  elif message.video:
-    file_size = message.video.file_size or 0
-  elif message.audio:
-    file_size = message.audio.file_size or 0
-  elif message.photo:
-    file_size = message.photo[-1].file_size or 0
+    file_size = 0
+    if message.document:
+        file_size = message.document.file_size or 0
+    elif message.video:
+        file_size = message.video.file_size or 0
+    elif message.audio:
+        file_size = message.audio.file_size or 0
+    elif message.photo:
+        file_size = message.photo[-1].file_size or 0
 
-  files.append(message.message_id)
-  total_size += file_size
+    files.append(message.message_id)
+    total_size += file_size
 
-  await state.update_data(user_files=files, total_size=total_size)
+    await state.update_data(user_files=files, total_size=total_size)
 
 
-# --- TUGATISH TUGMASI BOSILGANDA ---
+# --- TUGATISH TUGMASI BOSILGANDA (AVTOMATIK HAVOLA VA QR-KOD BERISH) ---
 @router.message(
     AlbumState.waiting_for_files, F.text == "✅ Fayllarni yuborib bo'ldim (Tugatish)"
 )
 async def finish_file_collection(message: Message, state: FSMContext, bot: Bot):
-  if not await check_user_access(message.from_user.id, bot):
-    await state.clear()
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[
-            [
-                KeyboardButton(
-                    text="📞 Telefon raqamni yuborish", request_contact=True
-                )
-            ]
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=True,
-    )
-    await message.answer(
-        "❌ **Xatolik!** Bazada topilmadi. Qaytadan ro'yxatdan o'ting:",
-        reply_markup=keyboard,
-        parse_mode="Markdown",
-    )
-    await state.set_state(AlbumState.waiting_for_contact)
-    return
-
-  data = await state.get_data()
-  files = data.get("user_files", [])
-  total_size = data.get("total_size", 0)
-
-  if not files:
-    await message.answer(
-        "⚠️ Siz hali hech qanday fayl yubormadingiz! Iltimos, fayl yuboring."
-    )
-    return
-
-  wait_msg = await message.answer(
-      "⏳ Fayllar serverga yuklanmoqda va kod tayyorlanmoqda, iltimos kuting...",
-      reply_markup=ReplyKeyboardRemove(),
-  )
-
-  try:
-    start_msg = await bot.send_message(
-        chat_id=SERVER_ID,
-        text="📥 [CORPORATE_START_MARKER] Server fayllarni qabul qilishga tayyor.",
-    )
-    start_id = start_msg.message_id
-
-    for msg_id in files:
-      await bot.copy_message(
-          chat_id=SERVER_ID,
-          from_chat_id=message.from_user.id,
-          message_id=msg_id,
-      )
-
-    end_msg = await bot.send_message(
-        chat_id=SERVER_ID, text="🏁 [CORPORATE_END_MARKER] Fayllar tugadi."
-    )
-    end_id = end_msg.message_id
-
-    code_str = f"F{start_id}-{end_id}"
-
-    try:
-      await bot.edit_message_text(
-          chat_id=SERVER_ID, message_id=start_id, text=code_str
-      )
-    except:
-      pass
-
-    try:
-      await bot.delete_message(
-          chat_id=message.chat.id, message_id=wait_msg.message_id
-      )
-    except:
-      pass
-
-    await state.update_data(
-        start_id=start_id, end_id=end_id, code_str=code_str, user_files=[]
-    )
-    await state.set_state(AlbumState.waiting_for_link)
-
-    formatted_total_size = format_size(total_size)
-
-    await message.answer(
-        f"✅ **Fayllar muvaffaqiyatli joylandi!**\n\n"
-        f"📊 Jami fayllar: {len(files)} ta\n"
-        f"📦 Hajmi: {formatted_total_size}\n"
-        f"🔐 <b>Sizning kodingiz:</b> <code>{code_str}</code>\n\n"
-        f"🔗 <b>Endi marhamat qilib vinetka24.uz havolasini yuboring (QR-kod olish"
-        f" uchun):</b>",
-        parse_mode="HTML",
-        reply_markup=ReplyKeyboardMarkup(
+    if not await check_user_access(message.from_user.id, bot):
+        await state.clear()
+        keyboard = ReplyKeyboardMarkup(
             keyboard=[
-                [KeyboardButton(text="❌ Bekor qilish")],
-                [KeyboardButton(text="/start")],
+                [
+                    KeyboardButton(
+                        text="📞 Telefon raqamni yuborish", request_contact=True
+                    )
+                ]
             ],
             resize_keyboard=True,
-        ),
+            one_time_keyboard=True,
+        )
+        await message.answer(
+            "❌ **Xatolik!** Bazada topilmadi. Qaytadan ro'yxatdan o'ting:",
+            reply_markup=keyboard,
+            parse_mode="Markdown",
+        )
+        await state.set_state(AlbumState.waiting_for_contact)
+        return
+
+    data = await state.get_data()
+    files = data.get("user_files", [])
+    total_size = data.get("total_size", 0)
+
+    if not files:
+        await message.answer(
+            "⚠️ Siz hali hech qanday fayl yubormadingiz! Iltimos, fayl yuboring."
+        )
+        return
+
+    wait_msg = await message.answer(
+        "⏳ Fayllar serverga yuklanmoqda va QR-kod tayyorlanmoqda, iltimos kuting...",
+        reply_markup=ReplyKeyboardRemove(),
     )
 
-  except Exception as e:
     try:
-      await bot.delete_message(
-          chat_id=message.chat.id, message_id=wait_msg.message_id
-      )
-    except:
-      pass
-    await message.answer(
-        f"⚠️ Xatolik yuz berdi: {e}", reply_markup=get_main_menu()
-    )
+        start_msg = await bot.send_message(
+            chat_id=SERVER_ID,
+            text="📥 [CORPORATE_START_MARKER] Server fayllarni qabul qilishga tayyor.",
+        )
+        start_id = start_msg.message_id
 
+        for msg_id in files:
+            await bot.copy_message(
+                chat_id=SERVER_ID,
+                from_chat_id=message.from_user.id,
+                message_id=msg_id,
+            )
 
-# --- SSILKA KELGANDA VA QR-KOD BERISH ---
-@router.message(AlbumState.waiting_for_link, F.text)
-async def check_user_link(message: Message, state: FSMContext, bot: Bot):
-  if not await check_user_access(message.from_user.id, bot):
-    await state.clear()
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[
-            [
-                KeyboardButton(
-                    text="📞 Telefon raqamni yuborish", request_contact=True
-                )
-            ]
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=True,
-    )
-    await message.answer(
-        "❌ **Xatolik!** Bazada topilmadi. Qaytadan ro'yxatdan o'ting:",
-        reply_markup=keyboard,
-        parse_mode="Markdown",
-    )
-    await state.set_state(AlbumState.waiting_for_contact)
-    return
+        end_msg = await bot.send_message(
+            chat_id=SERVER_ID, text="🏁 [CORPORATE_END_MARKER] Fayllar tugadi."
+        )
+        end_id = end_msg.message_id
 
-  text = message.text.strip()
+        code_str = f"F{start_id}-{end_id}"
+        auto_link = f"https://vinetka24.uz/{code_str}"
 
-  if text == "❌ Bekor qilish":
-    await state.clear()
-    await message.answer("❌ Amal bekor qilindi.", reply_markup=get_main_menu())
-    return
+        # Serverdagi xabarlarni kod va havola bilan yangilash
+        try:
+            await bot.edit_message_text(
+                chat_id=SERVER_ID, message_id=start_id, text=code_str
+            )
+        except:
+            pass
 
-  if "vinetka24.uz" not in text.lower():
-    await message.answer(
-        "❌ **Xatolik!** Yuborilgan xabarda <b>vinetka24.uz</b> manzili"
-        " topilmadi.\nIltimos, to'g'ri havolani yuboring.",
-        parse_mode="HTML",
-    )
-    return
+        try:
+            await bot.edit_message_text(
+                chat_id=SERVER_ID, message_id=end_id, text=auto_link
+            )
+        except:
+            pass
 
-  data = await state.get_data()
-  end_id = data.get("end_id")
-  code_str = data.get("code_str")
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id, message_id=wait_msg.message_id
+            )
+        except:
+            pass
 
-  if not end_id:
-    await message.answer(
-        "⚠️ Xatolik yuz berdi. Iltimos, boshidan fayl yuborishni bosing.",
-        reply_markup=get_main_menu(),
-    )
-    await state.clear()
-    return
+        # QR kodni generatsiya qilish va yuborish
+        qr_bytes = generate_qr_code(auto_link)
+        qr_photo = BufferedInputFile(qr_bytes, filename="vinetka_qr.png")
 
-  try:
-    try:
-      await bot.edit_message_text(
-          chat_id=SERVER_ID, message_id=end_id, text=text
-      )
-    except:
-      pass
+        formatted_total_size = format_size(total_size)
 
-    qr_bytes = generate_qr_code(text)
-    qr_photo = BufferedInputFile(qr_bytes, filename="vinetka_qr.png")
+        await message.answer_photo(
+            photo=qr_photo,
+            caption=(
+                "🎉 **Tabriklaymiz! Jarayon to'liq yakunlandi.**\n\n"
+                f"📊 Jami fayllar: {len(files)} ta\n"
+                f"📦 Hajmi: {formatted_total_size}\n"
+                f"🔐 **Kod:** <code>{code_str}</code>\n"
+                f"🔗 **Havola:** {auto_link}\n\n"
+                "📱 *Mana sizning tayyor QR-codingiz!* Bot keyingi buyurtmaga tayyor."
+            ),
+            parse_mode="HTML",
+            reply_markup=get_main_menu(),
+        )
 
-    await message.answer_photo(
-        photo=qr_photo,
-        caption=(
-            "🎉 **Tabriklaymiz! Jarayon to'liq yakunlandi.**\n\n"
-            f"🔗 **Havola:** {text}\n"
-            f"🔐 **Kod:** <code>{code_str}</code>\n\n"
-            "📱 *Mana sizning tayyor QR-codingiz!* Bot keyingi buyurtmaga"
-            " tayyor."
-        ),
-        parse_mode="HTML",
-        reply_markup=get_main_menu(),
-    )
+        await state.clear()
 
-    await state.clear()
-
-  except Exception as e:
-    await message.answer(
-        f"⚠️ QR-kod yaratishda xatolik: {e}", reply_markup=get_main_menu()
-    )
+    except Exception as e:
+        try:
+            await bot.delete_message(
+                chat_id=message.chat.id, message_id=wait_msg.message_id
+            )
+        except:
+            pass
+        await message.answer(
+            f"⚠️ Xatolik yuz berdi: {e}", reply_markup=get_main_menu()
+        )
 
 
 async def main():
-  bot = Bot(token=TOKEN)
-  dp = Dispatcher()
-  dp.include_router(router)
+    bot = Bot(token=TOKEN)
+    dp = Dispatcher()
+    dp.include_router(router)
 
-  await bot.delete_webhook(drop_pending_updates=True)
-  print("Bot muvaffaqiyatli ishga tushdi...")
-  await dp.start_polling(bot)
+    await bot.delete_webhook(drop_pending_updates=True)
+    print("Bot muvaffaqiyatli ishga tushdi...")
+    await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
-  asyncio.run(main())
+    asyncio.run(main())
