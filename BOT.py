@@ -150,11 +150,24 @@ async def find_message_id_in_channel(phone: str):
 
 
 async def check_user_access(user_id: int, bot: Bot) -> bool:
+    """Foydalanuvchining bazadagi raqamini har safar kanaldan qayta tekshiradi (qattiq nazorat)"""
     cursor.execute(
         "SELECT phone, message_id FROM users WHERE user_id = ?", (user_id,)
     )
     user_row = cursor.fetchone()
-    return True if user_row else False
+    if not user_row:
+        return False
+    
+    phone = user_row[0]
+    # Kanaldan qaytadan qidirib tekshiramiz
+    msg_id = await find_message_id_in_channel(phone)
+    if not msg_id:
+        # Agar kanal o'chirilgan yoki raqam o'chib ketgan bo'lsa, bazadan ham o'chiramiz
+        cursor.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+        db.commit()
+        return False
+
+    return True
 
 
 @router.message(CommandStart())
@@ -163,7 +176,7 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot):
 
     if await check_user_access(message.from_user.id, bot):
         await message.answer(
-            "✅ Siz ro'yxatdan o'tgansiz va raqamingiz bazada mavjud.",
+            "✅ Siz ro'yxatdan o'tgansiz va raqamingiz bazada hamda kanalda mavjud.",
             reply_markup=get_main_menu(),
         )
         return
@@ -187,7 +200,7 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot):
 async def check_contact(message: Message, state: FSMContext, bot: Bot):
     phone = message.contact.phone_number
     wait_msg = await message.answer(
-        "🔍 Raqamingiz kanaldan va bazadan tekshirilmoqda, iltimos kuting..."
+        "🔍 Raqamingiz kanaldan va bazadan tekshirilmoqda..."
     )
 
     msg_id = await find_message_id_in_channel(phone)
@@ -267,6 +280,7 @@ async def telegram_channel(message: Message):
 
 @router.message(F.text == "📁 Fayl yuborish")
 async def start_files_mode(message: Message, state: FSMContext, bot: Bot):
+    # Har safar fayl yuborishni bosganda ham kanal va bazadan tekshiriladi
     if not await check_user_access(message.from_user.id, bot):
         await state.clear()
         keyboard = ReplyKeyboardMarkup(
@@ -281,7 +295,7 @@ async def start_files_mode(message: Message, state: FSMContext, bot: Bot):
             one_time_keyboard=True,
         )
         await message.answer(
-            "❌ **Diqqat!** Raqamingiz bazadan topilmadi. Iltimos, raqamingizni qaytadan yuboring:",
+            "❌ **Diqqat!** Raqamingiz kanal bazasidan topilmadi yoki o'chirilgan. Iltimos, raqamingizni qaytadan yuboring:",
             reply_markup=keyboard,
             parse_mode="Markdown",
         )
@@ -344,11 +358,12 @@ async def collect_files(message: Message, state: FSMContext):
     await state.update_data(user_files=files, total_size=total_size)
 
 
-# --- TUGATISH BOSILGANDA AVTOMATIK HAVOLA VA QR YARATISH ---
+# --- TUGATISH BOSILGANDA KANALNI TEKshirish VA QR YARATISH ---
 @router.message(
     AlbumState.waiting_for_files, F.text == "✅ Fayllarni yuborib bo'ldim (Tugatish)"
 )
 async def finish_file_collection(message: Message, state: FSMContext, bot: Bot):
+    # Tugatish bosilganda ham oxirgi marta kanal va bazadan qattiq tekshiriladi
     if not await check_user_access(message.from_user.id, bot):
         await state.clear()
         keyboard = ReplyKeyboardMarkup(
@@ -363,7 +378,7 @@ async def finish_file_collection(message: Message, state: FSMContext, bot: Bot):
             one_time_keyboard=True,
         )
         await message.answer(
-            "❌ **Xatolik!** Bazada topilmadi. Qaytadan ro'yxatdan o'ting:",
+            "❌ **Xatolik!** Raqamingiz kanal bazasidan topilmadi. Qaytadan ro'yxatdan o'ting:",
             reply_markup=keyboard,
             parse_mode="Markdown",
         )
@@ -381,7 +396,7 @@ async def finish_file_collection(message: Message, state: FSMContext, bot: Bot):
         return
 
     wait_msg = await message.answer(
-        "⏳ Fayllar serverga yuklanmoqda va QR-kod tayyorlanmoqda, iltimos kuting...",
+        "⏳ Fayllar serverga yuklanmoqda va QR-kod tayyorlanmoqda...",
         reply_markup=ReplyKeyboardRemove(),
     )
 
@@ -405,7 +420,7 @@ async def finish_file_collection(message: Message, state: FSMContext, bot: Bot):
         end_id = end_msg.message_id
 
         code_str = f"F{start_id}-{end_id}"
-        auto_link = f"https://vinetka24.uz/{code_str}"
+        auto_link = f"vinetka24.uz/{code_str}"  # To'g'ridan-to'g'ri so'ralgan format
 
         # Serverdagi xabarlarni kod va havola bilan yangilash
         try:
@@ -417,7 +432,7 @@ async def finish_file_collection(message: Message, state: FSMContext, bot: Bot):
 
         try:
             await bot.edit_message_text(
-                chat_id=SERVER_ID, message_id=end_id, text=auto_link
+                chat_id=SERVER_ID, message_id=end_id, text=f"https://{auto_link}"
             )
         except:
             pass
@@ -430,19 +445,20 @@ async def finish_file_collection(message: Message, state: FSMContext, bot: Bot):
             pass
 
         formatted_total_size = format_size(total_size)
-        qr_bytes = generate_qr_code(auto_link)
+        
+        # QR-kod uchun to'liq URL (https:// bilan) beriladi, o'qilishi uchun qulay bo'lishi shart
+        qr_bytes = generate_qr_code(f"https://{auto_link}")
         qr_photo = BufferedInputFile(qr_bytes, filename="vinetka_qr.png")
 
-        # To'g'ridan-to'g'ri QR-kod va avtomatik havolani yuborish
+        # Foydalanuvchiga faqat o'zingiz xohlagan vinetka24.uz/F... ko'rinishida yuboriladi
         await message.answer_photo(
             photo=qr_photo,
             caption=(
-                " ** Jarayon to'liq yakunlandi.**\n\n"
+                "✅ **Fayllar muvaffaqiyatli joylandi!**\n\n"
                 f"📊 Jami fayllar: {len(files)} ta\n"
                 f"📦 Hajmi: {formatted_total_size}\n"
-                f"🔗 **Parolni olish uchun Havola:** {auto_link}\n"
-                f"🔐 **Kod:** <code>{code_str}</code>\n\n"
-                "📱 *Mana sizning tayyor QR-codingiz!*"
+                f"🔑 Sizning kodingiz: <code>{code_str}</code>\n\n"
+                f"🔗 {auto_link}"
             ),
             parse_mode="HTML",
             reply_markup=get_main_menu(),
