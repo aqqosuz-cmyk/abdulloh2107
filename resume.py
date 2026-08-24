@@ -305,43 +305,100 @@ async def go_to_photo_cb(callback: CallbackQuery, state: FSMContext):
     await state.set_state(Form.photo)
     await callback.answer()
 
-def create_preview_with_watermark(photo_path, uid):
-    """Linux serverda ham ishlaydigan rasm asosidagi NAMUNA preview generatori"""
+def create_preview_document_image(photo_path, data, uid):
+    """A4 sahifa shaklida hujjat skrinshoti ko'rinishini yasab, ustiga NAMUNA yozadigan funksiya"""
     preview_dir = os.path.join("downloads", f"preview_{uid}")
     os.makedirs(preview_dir, exist_ok=True)
-    png_path = os.path.join(preview_dir, "namuna_1.png")
+    png_path = os.path.join(preview_dir, "namuna_doc.png")
 
-    # Rasmni ochamiz
-    image = Image.open(photo_path).convert("RGBA")
-    
-    # Namuna yozuvi uchun shaffof qatlam yaratamiz
-    txt_layer = Image.new("RGBA", image.size, (255, 255, 255, 0))
-    draw = ImageDraw.Draw(txt_layer)
-    
-    # Matn o'lchamini rasm hajmiga moslaymiz
-    font_size = max(24, image.size[0] // 4)
+    # A4 proporsiyasidagi oq sahifa yaratamiz (masalan, kengligi 1240, balandligi 1754 - A4 300 DPI)
+    width, height = 1240, 1754
+    page = Image.new("RGB", (width, height), (255, 255, 255))
+    draw = ImageDraw.Draw(page)
+
     try:
-        font = ImageFont.truetype("arial.ttf", font_size)
+        font_title = ImageFont.truetype("arial.ttf", 36)
+        font_text = ImageFont.truetype("arial.ttf", 24)
+        font_bold = ImageFont.truetype("arial.ttf", 26)
     except:
-        font = ImageFont.load_default()
+        font_title = font_text = font_bold = ImageFont.load_default()
 
-    # Matnni rasm markaziga yozamiz va qiyshaytiramiz
-    text = "NAMUNA"
-    bbox = draw.textbbox((0, 0), text, font=font)
-    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    
-    watermark = Image.new("RGBA", (tw + 40, th + 40), (255, 255, 255, 0))
-    wd = ImageDraw.Draw(watermark)
-    wd.text((20, 20), text, font=font, fill=(120, 120, 120, 120))
-    watermark = watermark.rotate(30, expand=True, resample=Image.Resampling.BICUBIC)
+    # 1. Hujjat sarlavhasi
+    draw.text((width // 2, 100), "MA'LUMOTNOMA", fill=(0, 0, 0), font=font_title, anchor="mm")
 
-    # Suv belgisini asosiy rasm ustiga qo'shamiz
-    x = (image.width - watermark.width) // 2
-    y = (image.height - watermark.height) // 2
-    txt_layer.paste(watermark, (x, y), watermark)
+    # 2. Shaxsiy rasmni o'ng yuqori burchakka qo'yish
+    try:
+        user_img = Image.open(photo_path).convert("RGB")
+        # 3x4 proporsiyada kichraytiramiz
+        user_img = user_img.resize((220, 293))
+        page.paste(user_img, (width - 300, 180))
+        # Rasm atrofiga ramka
+        draw.rectangle([width - 300, 180, width - 80, 473], outline=(0, 0, 0), width=2)
+    except:
+        pass
+
+    # 3. Asosiy matn ma'lumotlarini yozib chiqish
+    fields = [
+        ("F.I.O.:", data.get("fish", "")),
+        ("Tug'ilgan yili:", data.get("t_yil", "")),
+        ("Tug'ilgan joyi:", data.get("t_joy", "")),
+        ("Millati:", data.get("millati", "")),
+        ("Ma'lumoti:", data.get("malumoti", "")),
+        ("Tamomlagan:", data.get("oquv_joyi", "")),
+        ("Mutaxassisligi:", data.get("mutaxassislik", "")),
+        ("Ilmiy darajasi:", data.get("ilmiy_daraja", "")),
+        ("Chet tillari:", data.get("chet_tillari", ""))
+    ]
+
+    y = 200
+    for label, val in fields:
+        draw.text((100, y), f"{label} {val}", fill=(0, 0, 0), font=font_text)
+        y += 50
+
+    # Mehnat faoliyati sarlavhasi
+    y += 30
+    draw.text((100, y), "MEHNAT FAOLIYATI:", fill=(0, 0, 0), font=font_bold)
+    y += 45
+
+    mehnat_list = user_data_cache.get(uid, {}).get("mehnat", [])
+    if mehnat_list:
+        for m in mehnat_list[:3]: # Sig'ishigacha ko'rsatamiz
+            text_m = f"• {m.get('kirgan_yili')} - {m.get('bosha_yili')}: {m.get('joyi')}, {m.get('lavozimi')}"
+            draw.text((120, y), text_m, fill=(50, 50, 50), font=font_text)
+            y += 40
+    else:
+        draw.text((120, y), "Ma'lumot kiritilmagan", fill=(100, 100, 100), font=font_text)
+        y += 40
+
+    # 4. Diagonal "NAMUNA" yozuvini sahifa ustiga bosish
+    txt_layer = Image.new("RGBA", page.size, (255, 255, 255, 0))
+    d_txt = ImageDraw.Draw(txt_layer)
     
-    final_image = Image.alpha_composite(image, txt_layer).convert("RGB")
-    final_image.save(png_path, format="PNG")
+    try:
+        font_watermark = ImageFont.truetype("arial.ttf", 180)
+    except:
+        font_watermark = ImageFont.load_default()
+
+    wt_text = "NAMUNA"
+    # Katta shaffof matn yaratamiz
+    w_bbox = d_txt.textbbox((0, 0), wt_text, font=font_watermark)
+    ww, wh = w_bbox[2] - w_bbox[0], w_bbox[3] - w_bbox[1]
+    
+    watermark_img = Image.new("RGBA", (ww + 100, wh + 100), (255, 255, 255, 0))
+    wd_draw = ImageDraw.Draw(watermark_img)
+    wd_draw.text((50, 50), wt_text, font=font_watermark, fill=(180, 180, 180, 110)) # shaffof kulrang
+    
+    # Burchak ostida aylantiramiz
+    watermark_img = watermark_img.rotate(35, expand=True, resample=Image.Resampling.BICUBIC)
+
+    # Sahifa markaziga joylaymiz
+    wx = (page.width - watermark_img.width) // 2
+    wy = (page.height - watermark_img.height) // 2
+    txt_layer.paste(watermark_img, (wx, wy), watermark_img)
+
+    # Rasm va qatlamni birlashtiramiz
+    final_page = Image.alpha_composite(page.convert("RGBA"), txt_layer).convert("RGB")
+    final_page.save(png_path, format="PNG")
 
     return [png_path], preview_dir
 
@@ -390,7 +447,7 @@ async def process_photo(message: Message, state: FSMContext):
     doc.save(file_path)
 
     try:
-        preview_paths, preview_dir = create_preview_with_watermark(photo_path, uid)
+        preview_paths, preview_dir = create_preview_document_image(photo_path, data, uid)
     except Exception as e:
         logging.exception("Namuna preview yaratishda xatolik")
         await message.answer(f"⚠️ Xatolik yuz berdi: {e}")
@@ -410,7 +467,7 @@ async def process_photo(message: Message, state: FSMContext):
     for preview_path in preview_paths:
         await message.answer_photo(
             FSInputFile(preview_path),
-            caption="👀 <b>MA'LUMOTNOMA NAMUNASI (Rasm ko'rinishida)</b>\nOriginal Word fayl to'lov tasdiqlangandan keyin yuboriladi.",
+            caption="👀 <b>MA'LUMOTNOMA HUJJAT NAMUNASI</b>\nOriginal Word fayl to'lov tasdiqlangandan keyin yuboriladi.",
             parse_mode="HTML"
         )
 
@@ -467,7 +524,7 @@ async def payment_approve(callback: CallbackQuery):
 
     await bot.send_document(
         uid, FSInputFile(info["file_path"]),
-        caption="✅ <b>To'lovingiz tasdiqlandi!</b>", parse_mode="HTML", reply_markup=start_keyboard()
+        caption="✅ <b>To'lovingiz tasdiqlandi! Mana hujjatning originali:</b>", parse_mode="HTML", reply_markup=start_keyboard()
     )
     await callback.message.edit_caption(caption="✅ TO'LOV TASDIQLANDI")
     pending_payments.pop(uid, None)
