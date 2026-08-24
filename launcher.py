@@ -11,9 +11,12 @@ async def run_bot(script_name):
 
 
 async def main():
-  # GitHub'dagi haqiqiy fayl nomlari yozildi
+  # Barcha botlar, shu jumladan resume.py birga ishga tushiriladi
   await asyncio.gather(
-      run_bot("downloader_bot.py"), run_bot("srok.py"), run_bot("BOT.py")
+      run_bot("downloader_bot.py"),
+      run_bot("srok.py"),
+      run_bot("BOT.py"),
+      run_bot("resume.py"),
   )
 
 
