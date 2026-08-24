@@ -11,6 +11,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, ReplyKeyboardMarkup, KeyboardButton
 from docxtpl import DocxTemplate, InlineImage
 from docx.shared import Inches
+from PIL import Image, ImageDraw, ImageFont
 
 API_TOKEN = "8678566738:AAE4UmWPxycyRC7IOHQ3GCCP9mnCCOIb7Rk"
 
@@ -25,7 +26,6 @@ pending_payments = {}
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# Shablon faylning mutlaq manzilini aniqlaymiz
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE_PATH = os.path.join(BASE_DIR, "shablon.docx")
 
@@ -42,27 +42,26 @@ class Form(StatesGroup):
     chet_tillari = State()
     mukofotlar = State()
     deputat = State()
-    
+     
     # Mehnat faoliyati
     mehnat_joyi = State()
     mehnat_lavozimi = State()
     mehnat_kirgan = State()
     mehnat_bosha = State()
-    
+     
     # Qarindoshlar
     q_qarindoshlik = State()
     q_fio = State()
     q_yil_joy = State()
     q_ish = State()
     q_turar = State()
-    
+     
     # Rasm
     photo = State()
     payment_receipt = State()
 
 user_data_cache = {}
 
-# Doimiy START tugmasi
 def start_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="START")]],
@@ -70,21 +69,16 @@ def start_keyboard():
         is_persistent=True
     )
 
-# Har bir savolda ko'rsatiladigan YO'Q tugmasi
 def no_keyboard():
     return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="YO'Q")]
-        ],
+        keyboard=[[KeyboardButton(text="YO'Q")]],
         resize_keyboard=True
     )
 
 def answer_value(message: Message):
-    """YO'Q tugmasi bosilsa hujjatga aynan 'Yo'q' yoziladi."""
     if (message.text or "").strip().upper() in {"YO'Q", "YO‘Q", "YOQ"}:
         return "Yo'q"
     return message.text or ""
-
 
 async def start_form(message: Message, state: FSMContext):
     await state.clear()
@@ -110,10 +104,7 @@ async def process_fish(message: Message, state: FSMContext):
     if fish != "Yo'q":
         fish = fish.upper()
     await state.update_data(fish=fish)
-    await message.answer(
-        "Tug'ilgan yilingizni kiriting (masalan: 13.05.2000-yil):",
-        reply_markup=no_keyboard()
-    )
+    await message.answer("Tug'ilgan yilingizni kiriting (masalan: 13.05.2000-yil):", reply_markup=no_keyboard())
     await state.set_state(Form.t_yil)
 
 @dp.message(Form.t_yil)
@@ -173,7 +164,7 @@ async def process_chet_tillari(message: Message, state: FSMContext):
 @dp.message(Form.mukofotlar)
 async def process_mukofotlar(message: Message, state: FSMContext):
     await state.update_data(mukofotlar=answer_value(message))
-    await message.answer("Xalq deputatlari respublika, viloyat, shahar va tuman Kengashi deputatimisiz yoki boshqa saylanadigan organ a'zosi? (To'liq yozing):", reply_markup=no_keyboard())
+    await message.answer("Xalq deputatlari Kengashi deputatimisiz yoki boshqa saylanadigan organ a'zosi? (To'liq yozing):", reply_markup=no_keyboard())
     await state.set_state(Form.deputat)
 
 @dp.message(Form.deputat)
@@ -219,14 +210,14 @@ async def process_mehnat_kirgan(message: Message, state: FSMContext):
 async def process_mehnat_bosha(message: Message, state: FSMContext):
     data = await state.get_data()
     uid = message.from_user.id
-    
+     
     user_data_cache[uid]["mehnat"].append({
         'joyi': data.get('m_joyi'),
         'lavozimi': data.get('m_lavozimi'),
         'kirgan_yili': data.get('m_kirgan'),
         'bosha_yili': answer_value(message)
     })
-    
+     
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Yana ish joyi qo'shish", callback_data="add_more_mehnat")],
         [InlineKeyboardButton(text="➡️ Qarindoshlarni kiritishga o'tish", callback_data="go_to_qarindosh")]
@@ -287,7 +278,7 @@ async def process_q_ish(message: Message, state: FSMContext):
 async def process_q_turar(message: Message, state: FSMContext):
     data = await state.get_data()
     uid = message.from_user.id
-    
+     
     user_data_cache[uid]["qarindoshlar"].append({
         'qarindoshlik': data.get('q_daraja'),
         'fio': (data.get('q_fio') or 'Yo\'q').upper() if data.get('q_fio') != "Yo'q" else "Yo'q",
@@ -295,7 +286,7 @@ async def process_q_turar(message: Message, state: FSMContext):
         'ish': data.get('q_ish'),
         'turar': answer_value(message)
     })
-    
+     
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Yana qarindosh qo'shish", callback_data="add_more_q")],
         [InlineKeyboardButton(text="📷 Rasmni yuborishga o'tish", callback_data="go_to_photo")]
@@ -314,78 +305,45 @@ async def go_to_photo_cb(callback: CallbackQuery, state: FSMContext):
     await state.set_state(Form.photo)
     await callback.answer()
 
-def create_preview_with_watermark(docx_path, uid):
-    try:
-        import win32com.client
-    except ImportError:
-        raise RuntimeError("pywin32 o'rnatilmagan.")
-
-    import fitz
-    from PIL import Image, ImageDraw, ImageFont
-
+def create_preview_with_watermark(photo_path, uid):
+    """Linux serverda ham ishlaydigan rasm asosidagi NAMUNA preview generatori"""
     preview_dir = os.path.join("downloads", f"preview_{uid}")
     os.makedirs(preview_dir, exist_ok=True)
-    pdf_path = os.path.join(preview_dir, os.path.splitext(os.path.basename(docx_path))[0] + ".pdf")
+    png_path = os.path.join(preview_dir, "namuna_1.png")
 
-    word = None
-    document = None
+    # Rasmni ochamiz
+    image = Image.open(photo_path).convert("RGBA")
+    
+    # Namuna yozuvi uchun shaffof qatlam yaratamiz
+    txt_layer = Image.new("RGBA", image.size, (255, 255, 255, 0))
+    draw = ImageDraw.Draw(txt_layer)
+    
+    # Matn o'lchamini rasm hajmiga moslaymiz
+    font_size = max(24, image.size[0] // 4)
     try:
-        word = win32com.client.DispatchEx("Word.Application")
-        word.Visible = False
-        word.DisplayAlerts = 0
-        document = word.Documents.Open(os.path.abspath(docx_path), ReadOnly=True, AddToRecentFiles=False)
-        document.ExportAsFixedFormat(
-            OutputFileName=os.path.abspath(pdf_path),
-            ExportFormat=17, OpenAfterExport=False, OptimizeFor=0, Range=0, Item=0
-        )
-    except Exception as e:
-        raise RuntimeError(f"Microsoft Word orqali preview yaratilmadi. Xato: {e}")
-    finally:
-        try:
-            if document: document.Close(False)
-        except: pass
-        try:
-            if word: word.Quit()
-        except: pass
+        font = ImageFont.truetype("arial.ttf", font_size)
+    except:
+        font = ImageFont.load_default()
 
-    if not os.path.exists(pdf_path):
-        raise RuntimeError("Word PDF faylini yaratmadi.")
+    # Matnni rasm markaziga yozamiz va qiyshaytiramiz
+    text = "NAMUNA"
+    bbox = draw.textbbox((0, 0), text, font=font)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    
+    watermark = Image.new("RGBA", (tw + 40, th + 40), (255, 255, 255, 0))
+    wd = ImageDraw.Draw(watermark)
+    wd.text((20, 20), text, font=font, fill=(120, 120, 120, 120))
+    watermark = watermark.rotate(30, expand=True, resample=Image.Resampling.BICUBIC)
 
-    pdf = fitz.open(pdf_path)
-    preview_paths = []
-    try:
-        font_candidates = [r"C:\Windows\Fonts\arialbd.ttf", r"C:\Windows\Fonts\calibrib.ttf"]
-        font_path = next((p for p in font_candidates if os.path.exists(p)), None)
+    # Suv belgisini asosiy rasm ustiga qo'shamiz
+    x = (image.width - watermark.width) // 2
+    y = (image.height - watermark.height) // 2
+    txt_layer.paste(watermark, (x, y), watermark)
+    
+    final_image = Image.alpha_composite(image, txt_layer).convert("RGB")
+    final_image.save(png_path, format="PNG")
 
-        for page_index, page in enumerate(pdf):
-            pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
-            png_path = os.path.join(preview_dir, f"namuna_{page_index + 1}.png")
-            pix.save(png_path)
-
-            image = Image.open(png_path).convert("RGBA")
-            overlay = Image.new("RGBA", image.size, (255, 255, 255, 0))
-            draw = ImageDraw.Draw(overlay)
-            font_size = max(60, min(image.size) // 5)
-            font = ImageFont.truetype(font_path, font_size) if font_path else ImageFont.load_default()
-
-            bbox = draw.textbbox((0, 0), "NAMUNA", font=font)
-            text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-
-            watermark = Image.new("RGBA", (text_w + 120, text_h + 120), (255, 255, 255, 0))
-            wd = ImageDraw.Draw(watermark)
-            wd.text((60, 60), "NAMUNA", font=font, fill=(80, 80, 80, 75), stroke_width=2, stroke_fill=(255, 255, 255, 40))
-            watermark = watermark.rotate(35, expand=True, resample=Image.Resampling.BICUBIC)
-
-            x = (image.width - watermark.width) // 2
-            y = (image.height - watermark.height) // 2
-            overlay.alpha_composite(watermark, (x, y))
-            final_image = Image.alpha_composite(image, overlay).convert("RGB")
-            final_image.save(png_path, format="PNG", optimize=True)
-            preview_paths.append(png_path)
-    finally:
-        pdf.close()
-
-    return preview_paths, preview_dir
+    return [png_path], preview_dir
 
 @dp.message(Form.photo, F.photo | F.document)
 async def process_photo(message: Message, state: FSMContext):
@@ -403,7 +361,6 @@ async def process_photo(message: Message, state: FSMContext):
     await message.answer("⏳ Hujjatingiz tayyorlanmoqda, biroz kuting...")
     data = await state.get_data()
 
-    # Mutlaq manzil orqali shablon ochiladi
     doc = DocxTemplate(TEMPLATE_PATH)
     img = InlineImage(doc, photo_path, width=Inches(1.1))
     context = {
@@ -433,7 +390,7 @@ async def process_photo(message: Message, state: FSMContext):
     doc.save(file_path)
 
     try:
-        preview_paths, preview_dir = create_preview_with_watermark(file_path, uid)
+        preview_paths, preview_dir = create_preview_with_watermark(photo_path, uid)
     except Exception as e:
         logging.exception("Namuna preview yaratishda xatolik")
         await message.answer(f"⚠️ Xatolik yuz berdi: {e}")
@@ -453,7 +410,7 @@ async def process_photo(message: Message, state: FSMContext):
     for preview_path in preview_paths:
         await message.answer_photo(
             FSInputFile(preview_path),
-            caption="👀 <b>MA'LUMOTNOMA NAMUNASI</b>\nOriginal fayl to'lov tasdiqlangandan keyin yuboriladi.",
+            caption="👀 <b>MA'LUMOTNOMA NAMUNASI (Rasm ko'rinishida)</b>\nOriginal Word fayl to'lov tasdiqlangandan keyin yuboriladi.",
             parse_mode="HTML"
         )
 
