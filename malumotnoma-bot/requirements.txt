@@ -1,7 +1,5 @@
-aiogram>=3.20,<4
-python-docx>=1.1,<2
-docxtpl>=0.20,<1
+aiogram>=3.13,<4
+docxtpl>=0.18,<1
+python-dotenv>=1.0,<2
 Pillow>=10,<13
 PyMuPDF>=1.24,<2
-pywin32>=306,<312
-python-dotenv>=1.0,<2
