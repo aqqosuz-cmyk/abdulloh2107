@@ -25,6 +25,10 @@ pending_payments = {}
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
+# Shablon faylning mutlaq manzilini aniqlaymiz
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TEMPLATE_PATH = os.path.join(BASE_DIR, "shablon.docx")
+
 class Form(StatesGroup):
     fish = State()
     t_yil = State()
@@ -399,7 +403,8 @@ async def process_photo(message: Message, state: FSMContext):
     await message.answer("⏳ Hujjatingiz tayyorlanmoqda, biroz kuting...")
     data = await state.get_data()
 
-    doc = DocxTemplate("shablon.docx")
+    # Mutlaq manzil orqali shablon ochiladi
+    doc = DocxTemplate(TEMPLATE_PATH)
     img = InlineImage(doc, photo_path, width=Inches(1.1))
     context = {
         "fish": data.get("fish"),
