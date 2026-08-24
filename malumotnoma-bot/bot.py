@@ -3,6 +3,7 @@ import shutil
 import asyncio
 import logging
 import re
+from dotenv import load_dotenv
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
@@ -12,14 +13,20 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from docxtpl import DocxTemplate, InlineImage
 from docx.shared import Inches
 
-API_TOKEN = "8678566738:AAE4UmWPxycyRC7IOHQ3GCCP9mnCCOIb7Rk"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(BASE_DIR, '.env'))
+
+API_TOKEN = os.getenv("BOT_TOKEN")
+if not API_TOKEN:
+    raise RuntimeError("BOT_TOKEN .env faylida topilmadi")
 
 # QO'LDA TO'LOVNI TASDIQLASH
-ADMIN_ID = 7737099509
-PAYMENT_CARD = "6262570240174476"
-CARD_OWNER = "Ergashev Tohirjon"
-PAYMENT_AMOUNT = "30 000 so'm"
-SUPPORT_PHONE = "908909199"
+ADMIN_ID = int(os.getenv("ADMIN_ID", "7737099509"))
+PAYMENT_CARD = os.getenv("PAYMENT_CARD", "")
+CARD_OWNER = os.getenv("CARD_OWNER", "Ergashev Tohirjon")
+PAYMENT_AMOUNT = os.getenv("PAYMENT_AMOUNT", "30 000 so'm")
+SUPPORT_PHONE = os.getenv("SUPPORT_PHONE", "908909199")
+PROMO_CODE = os.getenv("PROMO_CODE", "asm2107")
 pending_payments = {}
 
 bot = Bot(token=API_TOKEN)
@@ -55,6 +62,7 @@ class Form(StatesGroup):
     # Rasm
     photo = State()
     payment_receipt = State()
+    promo_code = State()
 
 user_data_cache = {}
 
@@ -317,91 +325,58 @@ async def go_to_photo_cb(callback: CallbackQuery, state: FSMContext):
 
 
 
+
 def create_preview_with_watermark(docx_path, uid):
     """
-    Microsoft Word orqali DOCX -> PDF, keyin PDF -> PNG.
-    Har bir sahifaga diagonal NAMUNA watermark qo'yiladi.
+    Linux/Docker/Bunny uchun:
+    DOCX -> PDF (LibreOffice headless) -> PNG -> diagonal NAMUNA watermark.
     """
-    try:
-        import win32com.client
-    except ImportError:
-        raise RuntimeError(
-            "pywin32 o'rnatilmagan. CMD'da: pip install pywin32 pymupdf pillow"
-        )
-
+    import subprocess
     import fitz
     from PIL import Image, ImageDraw, ImageFont
 
-    preview_dir = os.path.join("downloads", f"preview_{uid}")
+    preview_dir = os.path.join(BASE_DIR, "downloads", f"preview_{uid}")
     os.makedirs(preview_dir, exist_ok=True)
 
-    pdf_path = os.path.join(
-        preview_dir,
-        os.path.splitext(os.path.basename(docx_path))[0] + ".pdf"
+    soffice = shutil.which("soffice") or shutil.which("libreoffice")
+    if not soffice:
+        raise RuntimeError(
+            "LibreOffice topilmadi. Dockerfile uni avtomatik o'rnatadi."
+        )
+
+    pdf_name = os.path.splitext(os.path.basename(docx_path))[0] + ".pdf"
+    pdf_path = os.path.join(preview_dir, pdf_name)
+
+    result = subprocess.run(
+        [
+            soffice,
+            "--headless",
+            "--convert-to", "pdf",
+            "--outdir", preview_dir,
+            os.path.abspath(docx_path),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
 
-    word = None
-    document = None
-
-    try:
-        word = win32com.client.DispatchEx("Word.Application")
-        word.Visible = False
-        word.DisplayAlerts = 0
-
-        document = word.Documents.Open(
-            os.path.abspath(docx_path),
-            ReadOnly=True,
-            AddToRecentFiles=False,
-        )
-
-        # 17 = wdExportFormatPDF
-        document.ExportAsFixedFormat(
-            OutputFileName=os.path.abspath(pdf_path),
-            ExportFormat=17,
-            OpenAfterExport=False,
-            OptimizeFor=0,
-            Range=0,
-            Item=0,
-            IncludeDocProps=True,
-            KeepIRM=True,
-            CreateBookmarks=0,
-            DocStructureTags=True,
-            BitmapMissingFonts=True,
-            UseISO19005_1=False,
-        )
-
-    except Exception as e:
-        raise RuntimeError(
-            "Microsoft Word orqali preview yaratilmadi. "
-            f"Word o'rnatilganini tekshiring. Xato: {e}"
-        )
-    finally:
-        try:
-            if document is not None:
-                document.Close(False)
-        except Exception:
-            pass
-        try:
-            if word is not None:
-                word.Quit()
-        except Exception:
-            pass
-
     if not os.path.exists(pdf_path):
-        raise RuntimeError("Word PDF faylini yaratmadi.")
+        raise RuntimeError(
+            "DOCX -> PDF amalga oshmadi: "
+            + (result.stderr or result.stdout or "noma'lum xato")
+        )
 
     pdf = fitz.open(pdf_path)
     preview_paths = []
 
     try:
         font_candidates = [
-            r"C:\Windows\Fonts\arialbd.ttf",
-            r"C:\Windows\Fonts\calibrib.ttf",
-            r"C:\Windows\Fonts\tahomabd.ttf",
+            "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         ]
         font_path = next(
             (p for p in font_candidates if os.path.exists(p)),
-            None
+            None,
         )
 
         for page_index, page in enumerate(pdf):
@@ -412,7 +387,7 @@ def create_preview_with_watermark(docx_path, uid):
 
             png_path = os.path.join(
                 preview_dir,
-                f"namuna_{page_index + 1}.png"
+                f"namuna_{page_index + 1}.png",
             )
             pix.save(png_path)
 
@@ -425,7 +400,6 @@ def create_preview_with_watermark(docx_path, uid):
             draw = ImageDraw.Draw(overlay)
 
             font_size = max(60, min(image.size) // 5)
-
             if font_path:
                 font = ImageFont.truetype(font_path, font_size)
             else:
@@ -448,7 +422,7 @@ def create_preview_with_watermark(docx_path, uid):
                 font=font,
                 fill=(80, 80, 80, 75),
                 stroke_width=2,
-                stroke_fill=(255, 255, 255, 40),
+                stroke_fill=(255, 255, 255, 35),
             )
 
             watermark = watermark.rotate(
@@ -460,10 +434,7 @@ def create_preview_with_watermark(docx_path, uid):
             x = (image.width - watermark.width) // 2
             y = (image.height - watermark.height) // 2
 
-            overlay.alpha_composite(
-                watermark,
-                (x, y),
-            )
+            overlay.alpha_composite(watermark, (x, y))
 
             final_image = Image.alpha_composite(
                 image,
@@ -486,9 +457,9 @@ def create_preview_with_watermark(docx_path, uid):
 
 @dp.message(Form.photo, F.photo | F.document)
 async def process_photo(message: Message, state: FSMContext):
-    os.makedirs("downloads", exist_ok=True)
+    os.makedirs(os.path.join(BASE_DIR, "downloads"), exist_ok=True)
     uid = message.from_user.id
-    photo_path = f"downloads/photo_{uid}.jpg"
+    photo_path = os.path.join(BASE_DIR, f"downloads/photo_{uid}.jpg")
 
     if message.photo:
         photo = message.photo[-1]
@@ -507,7 +478,7 @@ async def process_photo(message: Message, state: FSMContext):
     await message.answer("⏳ Hujjatingiz tayyorlanmoqda, biroz kuting...")
     data = await state.get_data()
 
-    doc = DocxTemplate("shablon.docx")
+    doc = DocxTemplate(os.path.join(BASE_DIR, "shablon.docx"))
     img = InlineImage(doc, photo_path, width=Inches(1.1))
     context = {
         "fish": data.get("fish"),
@@ -533,7 +504,7 @@ async def process_photo(message: Message, state: FSMContext):
     person_name = (data.get("fish") or f"Malumotnoma_{uid}").strip()
     safe_name = re.sub(r'[<>:"/\\|?*]', "", person_name)
     safe_name = re.sub(r"\s+", " ", safe_name).strip()
-    file_path = os.path.join("downloads", f"{safe_name}.docx")
+    file_path = os.path.join(BASE_DIR, "downloads", f"{safe_name}.docx")
     doc.save(file_path)
 
     # Avval tayyor hujjatning NAMUNA previewini yaratamiz.
@@ -596,7 +567,49 @@ async def process_photo(message: Message, state: FSMContext):
         parse_mode="HTML",
     )
 
+    promo_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="🎟 PROMOKOD KIRITISH", callback_data="enter_promo")
+    ]])
+    await message.answer("Agar sizda promo kod bo'lsa, uni shu yerda kiritishingiz mumkin:", reply_markup=promo_keyboard)
+
     await state.set_state(Form.payment_receipt)
+
+
+@dp.callback_query(F.data == "enter_promo")
+async def enter_promo(callback: CallbackQuery, state: FSMContext):
+    await callback.message.answer("🎟 Promo kodni kiriting:")
+    await state.set_state(Form.promo_code)
+    await callback.answer()
+
+
+@dp.message(Form.promo_code)
+async def process_promo(message: Message, state: FSMContext):
+    if (message.text or "").strip().lower() != PROMO_CODE.lower():
+        await message.answer("❌ Promo kod noto'g'ri. Qaytadan kiriting:")
+        return
+
+    uid = message.from_user.id
+    info = pending_payments.get(uid)
+    if not info or not os.path.exists(info.get("file_path", "")):
+        await message.answer("Hujjat ma'lumotlari topilmadi. START orqali qaytadan boshlang.")
+        await state.clear()
+        return
+
+    await message.answer("✅ Promo kod qabul qilindi. Original hujjat yuborilmoqda...")
+    await bot.send_document(
+        uid, FSInputFile(info["file_path"]),
+        caption="✅ Promo kod tasdiqlandi! Mana original ma'lumotnomangiz.",
+        reply_markup=start_keyboard()
+    )
+
+    for path in (info.get("photo_path"), info.get("file_path")):
+        if path and os.path.exists(path):
+            os.remove(path)
+    preview_dir = info.get("preview_dir")
+    if preview_dir and os.path.isdir(preview_dir):
+        shutil.rmtree(preview_dir, ignore_errors=True)
+    pending_payments.pop(uid, None)
+    await state.clear()
 
 
 @dp.message(Form.payment_receipt, F.photo | F.document)
@@ -607,8 +620,8 @@ async def process_payment_receipt(message: Message, state: FSMContext):
         await message.answer("❌ To'lov ma'lumotlari topilmadi. START orqali qaytadan boshlang.")
         return
 
-    os.makedirs("downloads", exist_ok=True)
-    receipt_path = f"downloads/receipt_{uid}.jpg"
+    os.makedirs(os.path.join(BASE_DIR, "downloads"), exist_ok=True)
+    receipt_path = os.path.join(BASE_DIR, f"downloads/receipt_{uid}.jpg")
 
     try:
         if message.photo:
